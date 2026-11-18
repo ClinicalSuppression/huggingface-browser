@@ -74,11 +74,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     >
       {/* App Header */}
       <div className="flex items-center gap-3 px-4 pt-5 pb-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#0078d4] to-[#38bdf8] shadow-md shadow-[#0078d4]/25">
-          <Sparkles className="h-5 w-5 text-white" aria-hidden={true} />
-        </div>
+        <img
+          src="/icon.png"
+          alt="HF Browser Icon"
+          className="h-8 w-8 rounded-lg shrink-0 shadow-md shadow-black/40"
+        />
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold tracking-tight text-slate-100">
+          <div className="truncate text-sm font-semibold tracking-tight text-white">
             HF Browser
           </div>
         </div>

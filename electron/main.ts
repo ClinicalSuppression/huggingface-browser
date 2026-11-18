@@ -285,6 +285,9 @@ ipcMain.handle('jobs:list', async () => {
   return LocalDatabase.getJobs();
 });
 
+// Suppress unconfigured Chromium crashpad registration log on Windows
+app.commandLine.appendSwitch('disable-crash-reporter');
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {

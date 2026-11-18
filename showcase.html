@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>HF Browser - Icon Variants Showcase</title>
+  <style>
+    body {
+      background-color: #0b0f19;
+      color: #f1f5f9;
+      font-family: 'Segoe UI', -apple-system, sans-serif;
+      margin: 0;
+      padding: 40px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 28px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 8px;
+    }
+    p.subtitle {
+      text-align: center;
+      color: #94a3b8;
+      font-size: 15px;
+      margin-bottom: 40px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 30px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #151928;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      padding: 24px;
+      text-align: center;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: #38bdf8;
+    }
+    .card img {
+      width: 220px;
+      height: 220px;
+      border-radius: 48px;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+    }
+    .title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 8px;
+    }
+    .tag {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+    }
+    .desc {
+      color: #94a3b8;
+      font-size: 13.5px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <h1>HF Browser &mdash; Application Icon Variants</h1>
+  <p class="subtitle">Designed in the uniform SystemInfo / Quick Scaler / Dupe Check family style (deep navy squircle, periwinkle inset, off-white monogram).</p>
+  
+  <div class="grid">
+    <div class="card">
+      <img src="assets/variants/variant_1_equalizer.png" alt="Variant 1 Equalizer">
+      <div class="title">Variant 1</div>
+      <div class="tag">Equalizer Strip</div>
+      <p class="desc">5-bar telemetry equalizer in signature teal-to-green. Direct match with SystemInfo &amp; Quick Scaler.</p>
+    </div>
+
+    <div class="card">
+      <img src="assets/variants/variant_2_neural_hub.png" alt="Variant 2 Neural Hub">
+      <div class="title">Variant 2</div>
+      <div class="tag">Neural Hub</div>
+      <p class="desc">3-node network data bridge in Fluent Blue to Cyan (#0078d4 to #38bdf8). Represents Hugging Face Hub connectivity.</p>
+    </div>
+
+    <div class="card">
+      <img src="assets/variants/variant_3_reasoning_arc.png" alt="Variant 3 Reasoning Arc">
+      <div class="title">Variant 3</div>
+      <div class="tag">Reasoning Arc</div>
+      <p class="desc">3-capsule accelerator track in electric purple to cyan (#a855f7 to #38bdf8). Represents deep reasoning models &amp; tensor speed.</p>
+    </div>
+
+    <div class="card">
+      <img src="assets/variants/variant_4_tensor_matrix.png" alt="Variant 4 Tensor Matrix">
+      <div class="title">Variant 4</div>
+      <div class="tag">Tensor Matrix</div>
+      <p class="desc">4-block quantized matrix array in warm amber/gold to emerald (#fbbf24 to #34d399). Represents GGUF/FP8 local model serving.</p>
+    </div>
+  </div>
+</body>
+</html>
