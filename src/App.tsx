@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HardwareProfile, HfModelSearchResult, RuntimeId } from './types';
-import { DetectedRuntime, InstalledModelItem, ModelFilterChip, NavTabId, SortOption } from './ui/types';
+import {
+  AppSettings,
+  DetectedRuntime,
+  InstalledModelItem,
+  ModelFilterChip,
+  NavTabId,
+  RuntimeOptionsConfig,
+  SortOption,
+} from './ui/types';
 import { bridgeService } from './ui/data/mockService';
+import { DEFAULT_APP_SETTINGS } from './ui/utils/format';
 import { Sidebar } from './ui/components/Sidebar';
 import { DiscoveryView } from './ui/components/DiscoveryView';
 import { ModelDetailDrawer } from './ui/components/ModelDetailDrawer';
@@ -11,15 +20,36 @@ import { HardwareView } from './ui/components/HardwareView';
 import { SettingsVaultView } from './ui/components/SettingsVaultView';
 import { GeneralSettingsView } from './ui/components/GeneralSettingsView';
 
+const SETTINGS_STORAGE_KEY = 'hf-browser-settings-v1';
+
+function loadInitialSettings(): AppSettings {
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return DEFAULT_APP_SETTINGS;
+    const parsed = JSON.parse(raw) as Partial<AppSettings>;
+    return {
+      ...DEFAULT_APP_SETTINGS,
+      ...parsed,
+      runtimeOptions: {
+        ollama: { ...DEFAULT_APP_SETTINGS.runtimeOptions.ollama, ...parsed.runtimeOptions?.ollama },
+        llamacpp: { ...DEFAULT_APP_SETTINGS.runtimeOptions.llamacpp, ...parsed.runtimeOptions?.llamacpp },
+        xollama: { ...DEFAULT_APP_SETTINGS.runtimeOptions.xollama, ...parsed.runtimeOptions?.xollama },
+        vllm: { ...DEFAULT_APP_SETTINGS.runtimeOptions.vllm, ...parsed.runtimeOptions?.vllm },
+      },
+    };
+  } catch {
+    return DEFAULT_APP_SETTINGS;
+  }
+}
+
 export function App() {
   const [activeTab, setActiveTab] = useState<NavTabId>('discover');
   const [hardware, setHardware] = useState<HardwareProfile | null>(null);
-  const [activeGpuId, setActiveGpuId] = useState<string>('gpu-0');
-  const [safeHeadroomMb, setSafeHeadroomMb] = useState<number>(512);
   const [runtimes, setRuntimes] = useState<DetectedRuntime[]>([]);
   const [installedModels, setInstalledModels] = useState<InstalledModelItem[]>([]);
+  const [settings, setSettings] = useState<AppSettings>(loadInitialSettings);
 
-  // Discovery state
+  // Search HF state
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ModelFilterChip>('all');
   const [sort, setSort] = useState<SortOption>('trendingScore');
@@ -29,12 +59,28 @@ export function App() {
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
+  const updateSettings = useCallback((next: AppSettings) => {
+    setSettings(next);
+    try {
+      window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, []);
+
+  const updateRuntimeOptions = useCallback(
+    (nextRuntimeOpts: RuntimeOptionsConfig) => {
+      updateSettings({
+        ...settings,
+        runtimeOptions: nextRuntimeOpts,
+      });
+    },
+    [settings, updateSettings]
+  );
+
   const refreshHardware = useCallback(async () => {
     const hw = await bridgeService.getHardwareProfile();
     setHardware(hw);
-    if (hw.gpus.length > 0) {
-      setActiveGpuId(hw.gpus[0].id);
-    }
   }, []);
 
   const refreshRuntimes = useCallback(async () => {
@@ -47,41 +93,23 @@ export function App() {
     setInstalledModels(list);
   }, []);
 
-  // Live VRAM Usage Polling (every 2.5s)
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const live = await bridgeService.getLiveVramUsage(0);
-        setHardware((prev) => {
-          if (!prev || prev.gpus.length === 0) return prev;
-          const updatedGpus = prev.gpus.map((g, idx) => {
-            if (idx === 0) {
-              return {
-                ...g,
-                vramFreeBytes: live.freeBytes,
-              };
-            }
-            return g;
-          });
-          return {
-            ...prev,
-            gpus: updatedGpus,
-          };
-        });
-      } catch {
-        // Silent fallback
-      }
-    }, 2500);
-
-    return () => clearInterval(interval);
-  }, []);
-
   // Initial bootstrap
   useEffect(() => {
     refreshHardware();
     refreshRuntimes();
     refreshInstalled();
   }, [refreshHardware, refreshRuntimes, refreshInstalled]);
+
+  // Configurable hardware polling when window is visible
+  useEffect(() => {
+    if (settings.hardwarePollingRateMs <= 0) return;
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshHardware();
+      }
+    }, settings.hardwarePollingRateMs);
+    return () => clearInterval(interval);
+  }, [settings.hardwarePollingRateMs, refreshHardware]);
 
   // Search & filter effect
   useEffect(() => {
@@ -132,6 +160,7 @@ export function App() {
           id: modelTag,
           sizeBytes,
           modifiedAtIso: new Date().toISOString(),
+          checksumStatus: 'verified',
         },
         ...prev,
       ];
@@ -150,7 +179,7 @@ export function App() {
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         hardware={hardware}
-        activeGpuId={activeGpuId}
+        activeGpuId={settings.activeGpuId}
         runtimes={runtimes}
         installedCount={installedModels.length}
       />
@@ -167,8 +196,8 @@ export function App() {
             models={models}
             isLoading={isLoadingModels}
             hardware={hardware}
-            activeGpuId={activeGpuId}
-            safeHeadroomMb={safeHeadroomMb}
+            activeGpuId={settings.activeGpuId}
+            safeHeadroomMb={settings.safeVramHeadroomMb}
             onSelectModel={setSelectedModel}
             searchInputRef={searchInputRef}
           />
@@ -183,7 +212,12 @@ export function App() {
         )}
 
         {activeTab === 'runtimes' && (
-          <RuntimesView runtimes={runtimes} onRefresh={refreshRuntimes} />
+          <RuntimesView
+            runtimes={runtimes}
+            runtimeOptions={settings.runtimeOptions}
+            onUpdateRuntimeOptions={updateRuntimeOptions}
+            onRefresh={refreshRuntimes}
+          />
         )}
 
         {activeTab === 'hardware' && (
@@ -194,11 +228,9 @@ export function App() {
 
         {activeTab === 'settings' && (
           <GeneralSettingsView
+            settings={settings}
             hardware={hardware}
-            activeGpuId={activeGpuId}
-            onSelectGpu={setActiveGpuId}
-            safeHeadroomMb={safeHeadroomMb}
-            onChangeSafeHeadroom={setSafeHeadroomMb}
+            onUpdateSettings={updateSettings}
           />
         )}
       </main>
@@ -206,8 +238,9 @@ export function App() {
       <ModelDetailDrawer
         model={selectedModel}
         hardware={hardware}
-        activeGpuId={activeGpuId}
-        safeHeadroomMb={safeHeadroomMb}
+        activeGpuId={settings.activeGpuId}
+        safeHeadroomMb={settings.safeVramHeadroomMb}
+        defaultPresetIntent={settings.defaultPresetIntent}
         runtimes={runtimes}
         onClose={() => setSelectedModel(null)}
         onDeploySuccess={handleDeploySuccess}
