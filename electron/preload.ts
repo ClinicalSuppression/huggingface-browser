@@ -46,6 +46,7 @@ export interface IElectronAPI {
   scanLocalModels(): Promise<any[]>;
   getPreset(intent: PresetIntent): Promise<PurposePreset>;
   getJobs(): Promise<any[]>;
+  openExternalUrl(url: string): Promise<boolean>;
 }
 
 const electronAPI: IElectronAPI = {
@@ -80,6 +81,7 @@ const electronAPI: IElectronAPI = {
   scanLocalModels: () => ipcRenderer.invoke('cache:scanLocalModels'),
   getPreset: (intent) => ipcRenderer.invoke('presets:get', intent),
   getJobs: () => ipcRenderer.invoke('jobs:list'),
+  openExternalUrl: (url) => ipcRenderer.invoke('browser:openExternal', url),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

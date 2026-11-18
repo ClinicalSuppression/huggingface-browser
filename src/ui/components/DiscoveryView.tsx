@@ -1,14 +1,25 @@
-import React from 'react';
-import { Search, SlidersHorizontal, ArrowUpDown, Sparkles, X } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Search, RotateCcw, X } from 'lucide-react';
 import { HardwareProfile, HfModelSearchResult } from '../../types';
-import { ModelFilterChip, SortOption } from '../types';
+import {
+  AlignmentFilter,
+  DEFAULT_DISCOVERY_FILTERS,
+  DiscoveryFilters,
+  FamilyFilter,
+  FormatFilter,
+  HardwareFitFilter,
+  ParamSizeFilter,
+  SortOption,
+  TaskFilter,
+} from '../types';
+import { calculateBestFitContext } from '../utils/format';
 import { ModelCard } from './ModelCard';
 
 interface DiscoveryViewProps {
   query: string;
   onQueryChange: (q: string) => void;
-  filter: ModelFilterChip;
-  onFilterChange: (f: ModelFilterChip) => void;
+  filters: DiscoveryFilters;
+  onFiltersChange: (f: DiscoveryFilters) => void;
   sort: SortOption;
   onSortChange: (s: SortOption) => void;
   models: HfModelSearchResult[];
@@ -20,25 +31,79 @@ interface DiscoveryViewProps {
   searchInputRef: React.RefObject<HTMLInputElement | null>;
 }
 
-const FILTER_CHIPS: Array<{ id: ModelFilterChip; label: string }> = [
+const TASK_OPTIONS: Array<{ id: TaskFilter; label: string }> = [
+  { id: 'all', label: 'All Tasks' },
+  { id: 'any-to-any', label: 'Any-to-Any' },
+  { id: 'text-generation', label: 'Text Generation' },
+  { id: 'image-text-to-text', label: 'Multimodal Vision' },
+  { id: 'conversational', label: 'Conversational' },
+  { id: 'coding', label: 'Code Generation' },
+  { id: 'feature-extraction', label: 'Embeddings' },
+];
+
+const FORMAT_OPTIONS: Array<{ id: FormatFilter; label: string }> = [
+  { id: 'all', label: 'All Formats' },
+  { id: 'gguf', label: 'GGUF Only' },
+  { id: 'safetensors', label: 'SafeTensors Only' },
+  { id: 'fp8', label: 'FP8 / Compressed' },
+];
+
+const ALIGNMENT_OPTIONS: Array<{ id: AlignmentFilter; label: string }> = [
+  { id: 'all', label: 'All Alignments' },
+  { id: 'uncensored', label: 'Uncensored (ARA / Abliterated)' },
+  { id: 'aligned', label: 'Standard / Aligned Only' },
+];
+
+const FAMILY_OPTIONS: Array<{ id: FamilyFilter; label: string }> = [
+  { id: 'all', label: 'All Families' },
+  { id: 'llama', label: 'Llama' },
+  { id: 'qwen', label: 'Qwen' },
+  { id: 'deepseek', label: 'DeepSeek' },
+  { id: 'mistral', label: 'Mistral' },
+  { id: 'gemma', label: 'Gemma' },
+  { id: 'phi', label: 'Phi' },
+  { id: 'lfm', label: 'LFM / Liquid' },
+  { id: 'command-r', label: 'Command R' },
+  { id: 'starcoder', label: 'StarCoder' },
+  { id: 'glm', label: 'GLM' },
+  { id: 'yi', label: 'Yi' },
+  { id: 'internlm', label: 'InternLM' },
+  { id: 'exaone', label: 'EXAONE' },
+  { id: 'solar', label: 'Solar' },
+  { id: 'smollm', label: 'SmolLM' },
+];
+
+const HARDWARE_FIT_OPTIONS: Array<{ id: HardwareFitFilter; label: string }> = [
   { id: 'all', label: 'All Models' },
-  { id: 'gguf', label: 'GGUF' },
-  { id: 'safetensors', label: 'SafeTensors' },
-  { id: 'reasoning', label: 'Reasoning / Thinking' },
+  { id: 'gpu', label: 'Fits My GPU (Full GPU Fit)' },
+  { id: 'partial', label: 'Partial GPU Offload' },
+  { id: 'cpu', label: 'CPU Only' },
+];
+
+const PARAM_SIZE_OPTIONS: Array<{ id: ParamSizeFilter; label: string }> = [
+  { id: 'all', label: 'All Sizes' },
+  { id: 'under-4b', label: 'Under 4B' },
+  { id: '7b-9b', label: '7B – 9B' },
+  { id: '12b-16b', label: '12B – 16B' },
+  { id: '20b-40b', label: '20B – 40B' },
+  { id: '70b-plus', label: '70B+' },
 ];
 
 const SORT_OPTIONS: Array<{ id: SortOption; label: string }> = [
   { id: 'trendingScore', label: 'Trending' },
-  { id: 'downloads', label: 'Most Downloaded' },
+  { id: 'downloads', label: 'Most Downloads' },
   { id: 'likes', label: 'Most Liked' },
   { id: 'lastModified', label: 'Recently Updated' },
 ];
 
+const selectBaseClass =
+  'w-full rounded-lg border border-white/[0.1] bg-[#0f172a] px-2.5 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:border-white/[0.2] focus:border-[#38bdf8] focus:outline-none';
+
 export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
   query,
   onQueryChange,
-  filter,
-  onFilterChange,
+  filters,
+  onFiltersChange,
   sort,
   onSortChange,
   models,
@@ -49,11 +114,36 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
   onSelectModel,
   searchInputRef,
 }) => {
+  const filteredModels = useMemo(() => {
+    if (filters.hardwareFit === 'all') return models;
+    return models.filter((model) => {
+      const fit = calculateBestFitContext(model, hardware, activeGpuId, safeHeadroomMb);
+      if (!fit) return true;
+      if (filters.hardwareFit === 'gpu') return fit.status === 'gpu';
+      if (filters.hardwareFit === 'partial') return fit.status === 'minimal';
+      if (filters.hardwareFit === 'cpu') return fit.status === 'cpu';
+      return true;
+    });
+  }, [models, filters.hardwareFit, hardware, activeGpuId, safeHeadroomMb]);
+
+  const hasActiveFilters =
+    filters.task !== 'all' ||
+    filters.format !== 'all' ||
+    filters.alignment !== 'all' ||
+    filters.family !== 'all' ||
+    filters.hardwareFit !== 'all' ||
+    filters.paramSize !== 'all';
+
+  const handleResetAll = () => {
+    onQueryChange('');
+    onFiltersChange(DEFAULT_DISCOVERY_FILTERS);
+  };
+
   return (
     <section aria-label="Search HF" className="flex h-full flex-col">
       {/* Top Header & Search Bar */}
-      <header className="border-b border-white/[0.08] bg-[#090d16]/75 px-6 py-5 backdrop-blur-md">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <header className="border-b border-white/[0.08] bg-[#090d16]/75 px-6 py-4 backdrop-blur-md">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-white">
               Search HF
@@ -76,7 +166,7 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
               onChange={(e) => onQueryChange(e.target.value)}
               placeholder="Search models, authors, or tags (e.g. DeepSeek-R1, Qwen)..."
               aria-label="Search Hugging Face models"
-              className="w-full rounded-lg border border-white/[0.1] bg-[#0f172a]/90 py-2.5 pl-10 pr-20 text-sm text-slate-100 placeholder-slate-500 transition-colors hover:border-white/[0.18] focus:border-[#38bdf8] focus:outline-none"
+              className="w-full rounded-lg border border-white/[0.1] bg-[#0f172a]/90 py-2 pl-10 pr-20 text-sm text-slate-100 placeholder-slate-500 transition-colors hover:border-white/[0.18] focus:border-[#38bdf8] focus:outline-none"
             />
             {query ? (
               <button
@@ -98,54 +188,129 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
           </div>
         </div>
 
-        {/* Filter Chips & Sort Controls */}
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div
-            role="group"
-            aria-label="Model format and capability filters"
-            className="flex flex-wrap items-center gap-2"
-          >
-            <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-400">
-              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden={true} />
-              Filter:
-            </span>
-            {FILTER_CHIPS.map((chip) => {
-              const active = filter === chip.id;
-              const isReasoning = chip.id === 'reasoning';
-              return (
-                <button
-                  key={chip.id}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => onFilterChange(chip.id)}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
-                    active
-                      ? isReasoning
-                        ? 'border border-purple-400/45 bg-purple-500/20 text-purple-200 shadow-sm'
-                        : 'border border-[#38bdf8]/45 bg-[#0078d4]/25 text-[#7dd3fc] shadow-sm'
-                      : 'border border-white/[0.08] bg-white/[0.03] text-slate-300 hover:border-white/[0.16] hover:bg-white/[0.07] hover:text-white'
-                  }`}
-                >
-                  {isReasoning && <Sparkles className="h-3 w-3 text-purple-300" aria-hidden={true} />}
-                  {chip.label}
-                </button>
-              );
-            })}
+        {/* Rich 7-Dropdown Filter & Sort Toolbar */}
+        <div
+          role="group"
+          aria-label="Model search filters and sort order"
+          className="mt-3.5 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7"
+        >
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-task" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Task
+            </label>
+            <select
+              id="filter-task"
+              value={filters.task}
+              onChange={(e) => onFiltersChange({ ...filters, task: e.target.value as TaskFilter })}
+              className={selectBaseClass}
+            >
+              {TASK_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="discovery-sort"
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400"
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-format" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Format
+            </label>
+            <select
+              id="filter-format"
+              value={filters.format}
+              onChange={(e) => onFiltersChange({ ...filters, format: e.target.value as FormatFilter })}
+              className={selectBaseClass}
             >
-              <ArrowUpDown className="h-3.5 w-3.5" aria-hidden={true} />
-              Sort:
+              {FORMAT_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-alignment" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Uncensored
+            </label>
+            <select
+              id="filter-alignment"
+              value={filters.alignment}
+              onChange={(e) => onFiltersChange({ ...filters, alignment: e.target.value as AlignmentFilter })}
+              className={selectBaseClass}
+            >
+              {ALIGNMENT_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-family" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Architecture
+            </label>
+            <select
+              id="filter-family"
+              value={filters.family}
+              onChange={(e) => onFiltersChange({ ...filters, family: e.target.value as FamilyFilter })}
+              className={selectBaseClass}
+            >
+              {FAMILY_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-hardware-fit" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Hardware Fit
+            </label>
+            <select
+              id="filter-hardware-fit"
+              value={filters.hardwareFit}
+              onChange={(e) => onFiltersChange({ ...filters, hardwareFit: e.target.value as HardwareFitFilter })}
+              className={selectBaseClass}
+            >
+              {HARDWARE_FIT_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-param-size" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Parameter Size
+            </label>
+            <select
+              id="filter-param-size"
+              value={filters.paramSize}
+              onChange={(e) => onFiltersChange({ ...filters, paramSize: e.target.value as ParamSizeFilter })}
+              className={selectBaseClass}
+            >
+              {PARAM_SIZE_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="discovery-sort" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Sort Order
             </label>
             <select
               id="discovery-sort"
               value={sort}
               onChange={(e) => onSortChange(e.target.value as SortOption)}
-              className="rounded-lg border border-white/[0.1] bg-[#0f172a] px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:border-white/[0.2] focus:border-[#38bdf8] focus:outline-none"
+              className={selectBaseClass}
             >
               {SORT_OPTIONS.map((opt) => (
                 <option key={opt.id} value={opt.id}>
@@ -155,13 +320,29 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
             </select>
           </div>
         </div>
+
+        {(hasActiveFilters || query) && (
+          <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-400">
+            <span>
+              Showing <strong className="text-slate-200">{filteredModels.length}</strong> matching model{filteredModels.length === 1 ? '' : 's'}
+            </span>
+            <button
+              type="button"
+              onClick={handleResetAll}
+              className="inline-flex items-center gap-1 rounded-md border border-white/[0.1] bg-white/[0.04] px-2 py-0.5 text-[11px] font-medium text-slate-300 transition-colors hover:bg-white/[0.09] hover:text-white"
+            >
+              <RotateCcw className="h-3 w-3 text-[#38bdf8]" aria-hidden={true} />
+              Reset Filters
+            </button>
+          </div>
+        )}
       </header>
 
-      {/* Model Grid Content */}
+      {/* Model Grid Content (Reflows dynamically via auto-fill when right pane opens/resizes) */}
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {isLoading ? (
           <div
-            className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5"
+            className="grid grid-cols-[repeat(auto-fill,minmax(235px,1fr))] gap-3"
             aria-busy="true"
           >
             {Array.from({ length: 10 }).map((_, idx) => (
@@ -176,27 +357,24 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
               </div>
             ))}
           </div>
-        ) : models.length === 0 ? (
+        ) : filteredModels.length === 0 ? (
           <div className="fluent-card mx-auto mt-12 max-w-md rounded-xl p-8 text-center">
             <Search className="mx-auto h-8 w-8 text-slate-500" aria-hidden={true} />
             <h2 className="mt-3 text-sm font-semibold text-slate-200">No matching models found</h2>
             <p className="mt-1 text-xs text-slate-400">
-              Try clearing your search query or switching to the &ldquo;All Models&rdquo; filter.
+              Try clearing your search query or resetting the filter dropdowns.
             </p>
             <button
               type="button"
-              onClick={() => {
-                onQueryChange('');
-                onFilterChange('all');
-              }}
+              onClick={handleResetAll}
               className="mt-4 rounded-lg bg-[#0078d4] px-4 py-2 text-xs font-medium text-white hover:bg-[#1084d8]"
             >
               Reset Filters
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
-            {models.map((model) => (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(235px,1fr))] gap-3">
+            {filteredModels.map((model) => (
               <ModelCard
                 key={model.id}
                 model={model}

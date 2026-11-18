@@ -119,12 +119,19 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
     }
     const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
     if (linkMatch) {
+      const href = linkMatch[2];
       return (
         <a
           key={idx}
-          href={linkMatch[2]}
+          href={href}
           target="_blank"
           rel="noreferrer"
+          onClick={(e) => {
+            if (href.startsWith('http://') || href.startsWith('https://')) {
+              e.preventDefault();
+              void bridgeService.openExternalUrl(href);
+            }
+          }}
           className="text-[#38bdf8] underline hover:text-[#7dd3fc]"
         >
           {linkMatch[1]}
@@ -215,8 +222,14 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   // 16K Discrete Context Steps
   const discreteContextSteps = useMemo(() => {
     const steps: number[] = [];
-    if (maxContextTokens <= 8192) {
-      steps.push(4096, 8192);
+    if (maxContextTokens <= 4096) {
+      const low = Math.min(2048, maxContextTokens);
+      steps.push(low);
+      if (maxContextTokens > low) {
+        steps.push(maxContextTokens);
+      }
+    } else if (maxContextTokens <= 8192) {
+      steps.push(4096, maxContextTokens);
     } else {
       steps.push(8192); // Base starting step
       for (let t = 16384; t <= maxContextTokens; t += 16384) {
@@ -246,6 +259,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
   const [readmeMarkdown, setReadmeMarkdown] = useState<string>('');
   const [isLoadingReadme, setIsLoadingReadme] = useState(false);
+  const [webviewError, setWebviewError] = useState<string | null>(null);
 
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployProgress, setDeployProgress] = useState<InstallProgress | null>(null);
@@ -344,6 +358,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   useEffect(() => {
     if (!model) return;
     setActiveTab('webpage'); // Default to live webpage on the right!
+    setWebviewError(null);
 
     const opts = buildQuantOptionsForModel(model);
     const defaultQ = opts.find((o) => o.id === 'Q4_K_M') || opts[0];
@@ -444,6 +459,27 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [model, onClose]);
+
+  // Webview load error resilience
+  useEffect(() => {
+    const wv = webviewRef.current;
+    if (!wv || !model || activeTab !== 'webpage') return;
+
+    const handleFailLoad = (e: any) => {
+      if (e?.isMainFrame === false) return;
+      setWebviewError(e?.errorDescription || 'Unable to connect to Hugging Face Hub.');
+    };
+    const handleFinishLoad = () => {
+      setWebviewError(null);
+    };
+
+    wv.addEventListener('did-fail-load', handleFailLoad);
+    wv.addEventListener('did-finish-load', handleFinishLoad);
+    return () => {
+      wv.removeEventListener('did-fail-load', handleFailLoad);
+      wv.removeEventListener('did-finish-load', handleFinishLoad);
+    };
+  }, [model, activeTab]);
 
   if (!model || !arch) return null;
 
@@ -560,14 +596,14 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   };
 
   const handleOpenInBrowser = () => {
-    window.open(`https://huggingface.co/${model.id}`, '_blank', 'noopener,noreferrer');
+    void bridgeService.openExternalUrl(`https://huggingface.co/${model.id}`);
   };
 
   return (
     <aside
       role="region"
       aria-label="Model Inspector &amp; Webpage"
-      className="fixed inset-y-0 right-0 z-40 flex flex-col border-l border-white/[0.1] shadow-2xl bg-[#090d16] animate-in slide-in-from-right duration-200 select-none"
+      className="relative h-full shrink-0 flex flex-col border-l border-white/[0.1] shadow-2xl bg-[#090d16] select-none"
       style={{ width: `${drawerWidth}px` }}
     >
       {/* Draggable Left Resize Handle */}
@@ -626,7 +662,8 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
           <button
             type="button"
             onClick={handleOpenInBrowser}
-            title="Open in external browser"
+            title="Open in Browser"
+            aria-label="Open in Browser"
             className="rounded-lg border border-white/[0.08] bg-white/[0.04] p-2 text-slate-300 transition-colors hover:bg-white/[0.1] hover:text-white"
           >
             <ExternalLink className="h-4 w-4" aria-hidden={true} />
@@ -726,6 +763,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setWebviewError(null);
                   if (webviewRef.current) {
                     try { webviewRef.current.reload(); } catch {}
                   }
@@ -741,10 +779,44 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
                 className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
               >
                 <ExternalLink className="h-3 w-3" />
-                Open in Chrome/Edge
+                Open in Browser
               </button>
             </div>
           </div>
+          {webviewError && (
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-3 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-950"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" aria-hidden={true} />
+                <span className="truncate">
+                  Unable to connect to Hugging Face Hub ({webviewError})
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWebviewError(null);
+                    if (webviewRef.current) {
+                      try { webviewRef.current.reload(); } catch {}
+                    }
+                  }}
+                  className="rounded border border-amber-400 bg-white px-2.5 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100"
+                >
+                  Reload
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('readme')}
+                  className="rounded bg-amber-900 px-2.5 py-0.5 text-[11px] font-medium text-white hover:bg-amber-800"
+                >
+                  Switch to README
+                </button>
+              </div>
+            </div>
+          )}
           <webview
             ref={webviewRef}
             src={`https://huggingface.co/${model.id}`}
@@ -1305,7 +1377,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
               className="inline-flex items-center gap-1.5 rounded-lg border border-[#38bdf8]/35 bg-[#0078d4]/20 px-3 py-1.5 text-xs font-medium text-[#7dd3fc] transition-colors hover:bg-[#0078d4]/35"
             >
               <ExternalLink className="h-3.5 w-3.5" aria-hidden={true} />
-              Open in External Browser
+              Open in Browser
             </button>
           </div>
 

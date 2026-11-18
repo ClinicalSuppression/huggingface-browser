@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'path';
 import { detectHardware, getLiveVramUsage } from '../src/core/hardware';
 import { HuggingFaceClient } from '../src/core/hf-client';
@@ -270,6 +270,14 @@ ipcMain.handle('verify:runSmokeTest', async (_event, runtimeId: RuntimeId, model
 
 ipcMain.handle('presets:get', async (_event, intent: PresetIntent) => {
   return getPurposePreset(intent);
+});
+
+ipcMain.handle('browser:openExternal', async (_event, url: string) => {
+  if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
+    await shell.openExternal(url);
+    return true;
+  }
+  return false;
 });
 
 ipcMain.handle('jobs:list', async () => {

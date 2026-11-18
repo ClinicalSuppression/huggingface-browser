@@ -30,6 +30,24 @@
     outline: 2px solid #38bdf8;
     outline-offset: 2px;
   }
+
+  input, select, textarea {
+    color-scheme: dark;
+  }
+
+  input[type="number"] {
+    color-scheme: dark;
+  }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    opacity: 0.45;
+    filter: invert(0.85);
+    cursor: pointer;
+  }
+  input[type="number"]:hover::-webkit-inner-spin-button,
+  input[type="number"]:focus::-webkit-inner-spin-button {
+    opacity: 0.9;
+  }
 }
 
 /* Fluent Surface Utilities */

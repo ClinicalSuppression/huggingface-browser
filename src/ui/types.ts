@@ -15,6 +15,59 @@ export type NavTabId = 'discover' | 'installed' | 'runtimes' | 'hardware' | 'vau
 
 export type ModelFilterChip = 'all' | 'gguf' | 'safetensors' | 'reasoning';
 
+export type TaskFilter =
+  | 'all'
+  | 'any-to-any'
+  | 'text-generation'
+  | 'image-text-to-text'
+  | 'conversational'
+  | 'coding'
+  | 'feature-extraction';
+
+export type FormatFilter = 'all' | 'gguf' | 'safetensors' | 'fp8';
+
+export type AlignmentFilter = 'all' | 'uncensored' | 'aligned';
+
+export type FamilyFilter =
+  | 'all'
+  | 'llama'
+  | 'qwen'
+  | 'deepseek'
+  | 'mistral'
+  | 'gemma'
+  | 'phi'
+  | 'lfm'
+  | 'command-r'
+  | 'starcoder'
+  | 'glm'
+  | 'yi'
+  | 'internlm'
+  | 'exaone'
+  | 'solar'
+  | 'smollm';
+
+export type HardwareFitFilter = 'all' | 'gpu' | 'partial' | 'cpu';
+
+export type ParamSizeFilter = 'all' | 'under-4b' | '7b-9b' | '12b-16b' | '20b-40b' | '70b-plus';
+
+export interface DiscoveryFilters {
+  task: TaskFilter;
+  format: FormatFilter;
+  alignment: AlignmentFilter;
+  family: FamilyFilter;
+  hardwareFit: HardwareFitFilter;
+  paramSize: ParamSizeFilter;
+}
+
+export const DEFAULT_DISCOVERY_FILTERS: DiscoveryFilters = {
+  task: 'all',
+  format: 'all',
+  alignment: 'all',
+  family: 'all',
+  hardwareFit: 'all',
+  paramSize: 'all',
+};
+
 export type SortOption = 'trendingScore' | 'downloads' | 'likes' | 'lastModified';
 
 export interface QuantOption {
@@ -125,6 +178,7 @@ export interface IElectronAPI {
   runSmokeTest(runtimeId: RuntimeId, modelTag: string): Promise<VerificationResult>;
   getPreset(intent: PresetIntent): Promise<PurposePreset>;
   getJobs(): Promise<unknown[]>;
+  openExternalUrl(url: string): Promise<boolean>;
 }
 
 declare global {

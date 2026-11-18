@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { HardwareProfile, HfModelSearchResult, RuntimeId } from './types';
 import {
   AppSettings,
+  DEFAULT_DISCOVERY_FILTERS,
   DetectedRuntime,
+  DiscoveryFilters,
   InstalledModelItem,
-  ModelFilterChip,
   NavTabId,
   RuntimeOptionsConfig,
   SortOption,
@@ -21,15 +22,28 @@ import { SettingsVaultView } from './ui/components/SettingsVaultView';
 import { GeneralSettingsView } from './ui/components/GeneralSettingsView';
 
 const SETTINGS_STORAGE_KEY = 'hf-browser-settings-v1';
+const ACTIVE_GPU_STORAGE_KEY = 'hf_browser_active_gpu_id';
 
 function loadInitialSettings(): AppSettings {
+  let persistedGpuId: string | null = null;
+  try {
+    persistedGpuId = window.localStorage.getItem(ACTIVE_GPU_STORAGE_KEY);
+  } catch {
+    // Ignore storage access errors
+  }
+
   try {
     const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) return DEFAULT_APP_SETTINGS;
+    if (!raw) {
+      return persistedGpuId
+        ? { ...DEFAULT_APP_SETTINGS, activeGpuId: persistedGpuId }
+        : DEFAULT_APP_SETTINGS;
+    }
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     return {
       ...DEFAULT_APP_SETTINGS,
       ...parsed,
+      activeGpuId: persistedGpuId || parsed.activeGpuId || DEFAULT_APP_SETTINGS.activeGpuId,
       runtimeOptions: {
         ollama: { ...DEFAULT_APP_SETTINGS.runtimeOptions.ollama, ...parsed.runtimeOptions?.ollama },
         llamacpp: { ...DEFAULT_APP_SETTINGS.runtimeOptions.llamacpp, ...parsed.runtimeOptions?.llamacpp },
@@ -38,7 +52,9 @@ function loadInitialSettings(): AppSettings {
       },
     };
   } catch {
-    return DEFAULT_APP_SETTINGS;
+    return persistedGpuId
+      ? { ...DEFAULT_APP_SETTINGS, activeGpuId: persistedGpuId }
+      : DEFAULT_APP_SETTINGS;
   }
 }
 
@@ -51,7 +67,7 @@ export function App() {
 
   // Search HF state
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<ModelFilterChip>('all');
+  const [filters, setFilters] = useState<DiscoveryFilters>(DEFAULT_DISCOVERY_FILTERS);
   const [sort, setSort] = useState<SortOption>('trendingScore');
   const [models, setModels] = useState<HfModelSearchResult[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(true);
@@ -63,6 +79,9 @@ export function App() {
     setSettings(next);
     try {
       window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));
+      if (next.activeGpuId) {
+        window.localStorage.setItem(ACTIVE_GPU_STORAGE_KEY, next.activeGpuId);
+      }
     } catch {
       // Ignore storage quota errors
     }
@@ -117,7 +136,7 @@ export function App() {
     setIsLoadingModels(true);
     const timer = setTimeout(async () => {
       try {
-        const results = await bridgeService.searchModels(query, filter, sort);
+        const results = await bridgeService.searchModels(query, filters, sort);
         if (!cancelled) {
           setModels(results);
         }
@@ -132,7 +151,7 @@ export function App() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, filter, sort]);
+  }, [query, filters, sort]);
 
   // Global Ctrl+K shortcut for instant search focus
   useEffect(() => {
@@ -184,13 +203,13 @@ export function App() {
         installedCount={installedModels.length}
       />
 
-      <main className="relative flex-1 overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_rgba(0,120,212,0.12),_transparent_55%),radial-gradient(ellipse_at_bottom_left,_rgba(168,85,247,0.07),_transparent_50%)]">
+      <main className="relative flex-1 min-w-0 h-full overflow-hidden flex flex-col bg-[radial-gradient(ellipse_at_top_right,_rgba(0,120,212,0.12),_transparent_55%),radial-gradient(ellipse_at_bottom_left,_rgba(168,85,247,0.07),_transparent_50%)]">
         {activeTab === 'discover' && (
           <DiscoveryView
             query={query}
             onQueryChange={setQuery}
-            filter={filter}
-            onFilterChange={setFilter}
+            filters={filters}
+            onFiltersChange={setFilters}
             sort={sort}
             onSortChange={setSort}
             models={models}
@@ -235,16 +254,18 @@ export function App() {
         )}
       </main>
 
-      <ModelDetailDrawer
-        model={selectedModel}
-        hardware={hardware}
-        activeGpuId={settings.activeGpuId}
-        safeHeadroomMb={settings.safeVramHeadroomMb}
-        defaultPresetIntent={settings.defaultPresetIntent}
-        runtimes={runtimes}
-        onClose={() => setSelectedModel(null)}
-        onDeploySuccess={handleDeploySuccess}
-      />
+      {selectedModel && (
+        <ModelDetailDrawer
+          model={selectedModel}
+          hardware={hardware}
+          activeGpuId={settings.activeGpuId}
+          safeHeadroomMb={settings.safeVramHeadroomMb}
+          defaultPresetIntent={settings.defaultPresetIntent}
+          runtimes={runtimes}
+          onClose={() => setSelectedModel(null)}
+          onDeploySuccess={handleDeploySuccess}
+        />
+      )}
     </div>
   );
 }

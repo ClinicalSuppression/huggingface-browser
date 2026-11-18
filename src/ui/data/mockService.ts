@@ -5,7 +5,159 @@ import {
   RuntimeId,
   VerificationResult,
 } from '../../types';
-import { DetectedRuntime, InstalledModelItem, ModelFilterChip, SortOption } from '../types';
+import {
+  AlignmentFilter,
+  DetectedRuntime,
+  DiscoveryFilters,
+  FamilyFilter,
+  FormatFilter,
+  InstalledModelItem,
+  ParamSizeFilter,
+  SortOption,
+  TaskFilter,
+} from '../types';
+import { estimateModelArchitecture } from '../utils/format';
+
+const UNCENSORED_KEYWORDS = [
+  'ara',
+  'ara-abliterated',
+  'abliterated',
+  'abbliterated',
+  'ablation',
+  'heretic',
+  'fable-heretic',
+  'uncensored-heretic',
+  'unaligned',
+  'de-aligned',
+  'dealigned',
+  'uncensored',
+  'decensored',
+  'unfiltered',
+  'jailbreak',
+  'jailbroken',
+  'unrestricted',
+  'no-refusal',
+  'no-refusals',
+  'raw',
+  'freedom',
+  'sydney',
+  'dolphin',
+  'mradermacher/abliterated',
+  'davidau/defiant-fable-heretic',
+  'huihui-ai/abliterated',
+];
+
+const FAMILY_KEYWORDS: Record<Exclude<FamilyFilter, 'all'>, string[]> = {
+  llama: ['llama'],
+  qwen: ['qwen', 'qwq'],
+  deepseek: ['deepseek'],
+  mistral: ['mistral', 'mixtral', 'codestral', 'pixtral'],
+  gemma: ['gemma'],
+  phi: ['phi-3', 'phi-3.5', 'phi-4', 'phi3', 'phi4', 'microsoft/phi'],
+  lfm: ['lfm', 'liquid'],
+  'command-r': ['command-r', 'c4ai-command'],
+  starcoder: ['starcoder'],
+  glm: ['glm', 'chatglm'],
+  yi: ['01-ai/yi', 'yi-1.5', 'yi-large', '/yi-'],
+  internlm: ['internlm'],
+  exaone: ['exaone'],
+  solar: ['solar'],
+  smollm: ['smollm', 'smolvlm'],
+};
+
+function isUncensoredModel(m: HfModelSearchResult): boolean {
+  const haystack = `${m.id} ${m.description || ''} ${(m.tags || []).join(' ')}`.toLowerCase();
+  return UNCENSORED_KEYWORDS.some((kw) => haystack.includes(kw));
+}
+
+function matchesTask(m: HfModelSearchResult, task: TaskFilter): boolean {
+  if (task === 'all') return true;
+  const pipeline = (m.pipeline_tag || '').toLowerCase();
+  const tags = (m.tags || []).map((t) => t.toLowerCase());
+  const idLower = m.id.toLowerCase();
+
+  if (task === 'coding') {
+    return (
+      tags.some((t) => t.includes('code') || t.includes('coding')) ||
+      idLower.includes('coder') ||
+      idLower.includes('codestral') ||
+      idLower.includes('starcoder')
+    );
+  }
+  if (task === 'conversational') {
+    return pipeline === 'conversational' || tags.includes('conversational') || idLower.includes('chat');
+  }
+  return pipeline === task || tags.includes(task);
+}
+
+function matchesFormat(m: HfModelSearchResult, format: FormatFilter): boolean {
+  if (format === 'all') return true;
+  const tags = (m.tags || []).map((t) => t.toLowerCase());
+  const idLower = m.id.toLowerCase();
+  const files = (m.siblings || []).map((s) => s.rfilename.toLowerCase());
+
+  if (format === 'gguf') {
+    return tags.includes('gguf') || idLower.includes('gguf') || files.some((f) => f.endsWith('.gguf'));
+  }
+  if (format === 'safetensors') {
+    return tags.includes('safetensors') || files.some((f) => f.endsWith('.safetensors'));
+  }
+  if (format === 'fp8') {
+    return (
+      tags.includes('fp8') ||
+      tags.includes('w8a8') ||
+      idLower.includes('fp8') ||
+      files.some((f) => f.includes('fp8'))
+    );
+  }
+  return true;
+}
+
+function matchesAlignment(m: HfModelSearchResult, alignment: AlignmentFilter): boolean {
+  if (alignment === 'all') return true;
+  const uncensored = isUncensoredModel(m);
+  return alignment === 'uncensored' ? uncensored : !uncensored;
+}
+
+function matchesFamily(m: HfModelSearchResult, family: FamilyFilter): boolean {
+  if (family === 'all') return true;
+  const haystack = `${m.id} ${(m.tags || []).join(' ')}`.toLowerCase();
+  const keywords = FAMILY_KEYWORDS[family];
+  return keywords.some((kw) => haystack.includes(kw));
+}
+
+function matchesParamSize(m: HfModelSearchResult, paramSize: ParamSizeFilter): boolean {
+  if (paramSize === 'all') return true;
+  const { paramBillions } = estimateModelArchitecture(m);
+  switch (paramSize) {
+    case 'under-4b':
+      return paramBillions < 4;
+    case '7b-9b':
+      return paramBillions >= 7 && paramBillions <= 9.5;
+    case '12b-16b':
+      return paramBillions >= 12 && paramBillions <= 16.5;
+    case '20b-40b':
+      return paramBillions >= 20 && paramBillions <= 40.5;
+    case '70b-plus':
+      return paramBillions >= 70;
+    default:
+      return true;
+  }
+}
+
+export function applyDiscoveryFilters(
+  models: HfModelSearchResult[],
+  filters: DiscoveryFilters
+): HfModelSearchResult[] {
+  return models.filter(
+    (m) =>
+      matchesTask(m, filters.task) &&
+      matchesFormat(m, filters.format) &&
+      matchesAlignment(m, filters.alignment) &&
+      matchesFamily(m, filters.family) &&
+      matchesParamSize(m, filters.paramSize)
+  );
+}
 
 export const MOCK_HARDWARE_PROFILE: HardwareProfile = {
   gpus: [
@@ -258,51 +410,49 @@ export const bridgeService = {
 
   async searchModels(
     query: string,
-    filter: ModelFilterChip,
+    filters: DiscoveryFilters,
     sort: SortOption
   ): Promise<HfModelSearchResult[]> {
     if (window.electronAPI) {
-      const filterStr =
-        filter === 'gguf'
-          ? 'gguf'
-          : filter === 'safetensors'
-            ? 'safetensors'
-            : filter === 'reasoning'
-              ? 'reasoning'
-              : undefined;
-      return window.electronAPI.searchModels(query, {
-        filter: filterStr,
+      let apiFilter: string | undefined;
+      if (filters.task !== 'all' && filters.task !== 'coding') {
+        apiFilter = filters.task;
+      } else if (filters.format === 'gguf' || filters.format === 'safetensors') {
+        apiFilter = filters.format;
+      }
+
+      const searchTerms: string[] = [];
+      if (query.trim()) searchTerms.push(query.trim());
+      if (filters.family !== 'all' && !query.toLowerCase().includes(filters.family)) {
+        searchTerms.push(filters.family === 'lfm' ? 'LFM' : filters.family);
+      }
+      if (filters.alignment === 'uncensored' && !query.trim()) {
+        searchTerms.push('abliterated');
+      }
+      if (filters.task === 'coding' && !query.toLowerCase().includes('code')) {
+        searchTerms.push('coder');
+      }
+
+      const raw = await window.electronAPI.searchModels(searchTerms.join(' '), {
+        filter: apiFilter,
         sort,
-        limit: 30,
+        limit: 50,
       });
+      return applyDiscoveryFilters(raw, filters);
     }
 
     const q = query.trim().toLowerCase();
-    let results = MOCK_MODELS.filter((m) => {
-      const matchesQuery =
+    const queryFiltered = MOCK_MODELS.filter((m) => {
+      return (
         !q ||
         m.id.toLowerCase().includes(q) ||
         m.author.toLowerCase().includes(q) ||
-        (m.tags || []).some((t) => t.toLowerCase().includes(q));
-
-      if (!matchesQuery) return false;
-
-      if (filter === 'gguf') {
-        return (m.tags || []).includes('gguf') || m.id.toLowerCase().includes('gguf');
-      }
-      if (filter === 'safetensors') {
-        return (m.tags || []).includes('safetensors');
-      }
-      if (filter === 'reasoning') {
-        const idL = m.id.toLowerCase();
-        return (
-          idL.includes('deepseek-r1') ||
-          idL.includes('qwq') ||
-          (m.tags || []).some((t) => t === 'reasoning' || t === 'thinking')
-        );
-      }
-      return true;
+        (m.description || '').toLowerCase().includes(q) ||
+        (m.tags || []).some((t) => t.toLowerCase().includes(q))
+      );
     });
+
+    let results = applyDiscoveryFilters(queryFiltered, filters);
 
     results = [...results].sort((a, b) => {
       if (sort === 'downloads') return (b.downloads || 0) - (a.downloads || 0);
@@ -428,5 +578,13 @@ export const bridgeService = {
       return { valid: true, username: 'local-windows-user' };
     }
     return { valid: false, error: 'Token should start with "hf_" and be at least 10 characters.' };
+  },
+
+  async openExternalUrl(url: string): Promise<boolean> {
+    if (window.electronAPI && typeof window.electronAPI.openExternalUrl === 'function') {
+      return window.electronAPI.openExternalUrl(url);
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return true;
   },
 };

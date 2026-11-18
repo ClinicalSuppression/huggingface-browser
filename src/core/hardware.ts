@@ -98,7 +98,7 @@ export async function detectHardware(): Promise<HardwareProfile> {
     if (gpus.length === 0) {
       try {
         const cimScript = `
-          $cards = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Select-Object Name, AdapterRAM, DriverVersion, Status, ConfigManagerErrorCode
+          $cards = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'OK' -and $_.ConfigManagerErrorCode -eq 0 -and $_.Problem -eq 0 } | Select-Object Name, AdapterRAM, DriverVersion, Status, ConfigManagerErrorCode
           $cards | ConvertTo-Json -Depth 2
         `;
         const cimOutput = await runPowerShell(cimScript, 3000);
@@ -133,6 +133,8 @@ export async function detectHardware(): Promise<HardwareProfile> {
                 vramBytes = 16 * 1024 * 1024 * 1024;
               }
             }
+
+            if (vramBytes <= 0) continue;
 
             gpus.push({
               id: `gpu-${index}`,

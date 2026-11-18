@@ -67,9 +67,15 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
   };
 
   const handleReset = () => {
+    const nextGpuId = gpus[0]?.id || DEFAULT_APP_SETTINGS.activeGpuId;
+    try {
+      window.localStorage.setItem('hf_browser_active_gpu_id', nextGpuId);
+    } catch {
+      // Ignore storage errors
+    }
     onUpdateSettings({
       ...DEFAULT_APP_SETTINGS,
-      activeGpuId: gpus[0]?.id || DEFAULT_APP_SETTINGS.activeGpuId,
+      activeGpuId: nextGpuId,
     });
   };
 
@@ -122,9 +128,15 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
               <select
                 id="active-gpu-select"
                 value={selectedGpu?.id || settings.activeGpuId}
-                onChange={(e) =>
-                  onUpdateSettings({ ...settings, activeGpuId: e.target.value })
-                }
+                onChange={(e) => {
+                  const nextId = e.target.value;
+                  try {
+                    window.localStorage.setItem('hf_browser_active_gpu_id', nextId);
+                  } catch {
+                    // Ignore storage errors
+                  }
+                  onUpdateSettings({ ...settings, activeGpuId: nextId });
+                }}
                 className="w-full rounded-lg border border-white/[0.1] bg-[#090d16] px-3 py-2 text-xs font-medium text-slate-100 focus:border-[#38bdf8] focus:outline-none"
               >
                 {gpus.length > 0 ? (
