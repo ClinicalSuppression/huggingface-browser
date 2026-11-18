@@ -68,6 +68,12 @@ interface AuthorGenConfig {
   repetition_penalty?: number;
 }
 
+interface ModelConfigContextInfo {
+  trainedContext: number;
+  maxContext: number;
+  isRopeScaled: boolean;
+}
+
 interface EditablePresetParams {
   temperature: number;
   topP: number;
@@ -213,7 +219,14 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
   const quantOptions = useMemo(() => (model ? buildQuantOptionsForModel(model) : []), [model]);
   const arch = useMemo(() => (model ? estimateModelArchitecture(model) : null), [model]);
-  const maxContextTokens = useMemo(() => (model ? estimateMaxContextTokens(model) : 32768), [model]);
+  const estimatedMaxContext = useMemo(
+    () => (model ? estimateMaxContextTokens(model) : 32768),
+    [model]
+  );
+  const [configContextInfo, setConfigContextInfo] = useState<ModelConfigContextInfo | null>(null);
+  const maxContextTokens = configContextInfo?.maxContext ?? estimatedMaxContext;
+  const trainedContextTokens = configContextInfo?.trainedContext ?? estimatedMaxContext;
+  const isRopeScaled = configContextInfo?.isRopeScaled ?? false;
   const reasoningInfo = useMemo(
     () => (model ? detectReasoningRequirements(model.id, model.tags || []) : null),
     [model]
@@ -365,6 +378,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
     setSelectedQuantId(defaultQ?.id || 'Q4_K_M');
 
     const archMax = estimateMaxContextTokens(model);
+    setConfigContextInfo(null);
     setContextTokens(Math.min(8192, archMax));
 
     const reasoning = detectReasoningRequirements(model.id, model.tags || []);
@@ -385,6 +399,51 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
     setSmokeResult(null);
 
     const controller = new AbortController();
+
+    // Fetch model config.json for trained vs. RoPE-scaled max context
+    fetch(`https://huggingface.co/${model.id}/raw/main/config.json`, {
+      signal: controller.signal,
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: Record<string, any> | null) => {
+        if (!data || controller.signal.aborted) return;
+        const rawMax =
+          (typeof data.max_position_embeddings === 'number' && data.max_position_embeddings) ||
+          (typeof data.context_length === 'number' && data.context_length) ||
+          (typeof data.n_ctx === 'number' && data.n_ctx) ||
+          archMax;
+        const ropeScaling =
+          data.rope_scaling && typeof data.rope_scaling === 'object' ? data.rope_scaling : null;
+        const origFromRope =
+          ropeScaling && typeof ropeScaling.original_max_position_embeddings === 'number'
+            ? ropeScaling.original_max_position_embeddings
+            : typeof data.original_max_position_embeddings === 'number'
+              ? data.original_max_position_embeddings
+              : null;
+
+        if (origFromRope && origFromRope > 0 && rawMax > origFromRope) {
+          setConfigContextInfo({
+            trainedContext: origFromRope,
+            maxContext: rawMax,
+            isRopeScaled: true,
+          });
+        } else if (ropeScaling && typeof ropeScaling.factor === 'number' && ropeScaling.factor > 1) {
+          setConfigContextInfo({
+            trainedContext: Math.round(rawMax / ropeScaling.factor),
+            maxContext: rawMax,
+            isRopeScaled: true,
+          });
+        } else {
+          setConfigContextInfo({
+            trainedContext: rawMax,
+            maxContext: rawMax,
+            isRopeScaled: false,
+          });
+        }
+      })
+      .catch(() => {
+        // Offline or missing config.json
+      });
 
     // Fetch author generation_config.json if available
     fetch(`https://huggingface.co/${model.id}/raw/main/generation_config.json`, {
@@ -644,6 +703,11 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
           >
             {model.id.split('/').slice(1).join('/') || model.id}
           </h2>
+          <p className="mt-0.5 text-[11px] font-mono text-slate-400">
+            Trained Context: {formatContextLength(trainedContextTokens)} &middot; Max Context:{' '}
+            {formatContextLength(maxContextTokens)}
+            {isRopeScaled ? ' (RoPE Scaled)' : ''}
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -846,6 +910,29 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Quantization format">
                 {quantOptions.map((q) => {
                   const selected = q.id === selectedQuant.id;
+                  const qWeightBytes = calculateWeightMemoryBytes(arch.paramBillions, q.bitsPerWeight);
+                  const qRequiredVram = qWeightBytes + kvCacheBytes + headroomBytes;
+                  const qOffloadPct =
+                    qWeightBytes > 0
+                      ? Math.max(0, Math.round(((qRequiredVram - totalFreeVram) / qWeightBytes) * 100))
+                      : 0;
+
+                  const outlineClass =
+                    qOffloadPct === 0
+                      ? 'border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15'
+                      : qOffloadPct <= 20
+                        ? 'border-amber-400 bg-amber-400/10 hover:bg-amber-400/15'
+                        : 'border-rose-500 bg-rose-500/10 hover:bg-rose-500/15';
+
+                  const fitBadgeText =
+                    qOffloadPct === 0 ? 'Full VRAM' : `${qOffloadPct}% Offload`;
+                  const fitBadgeClass =
+                    qOffloadPct === 0
+                      ? 'text-emerald-300'
+                      : qOffloadPct <= 20
+                        ? 'text-amber-300'
+                        : 'text-rose-300';
+
                   return (
                     <button
                       key={q.id}
@@ -853,19 +940,29 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
                       role="radio"
                       aria-checked={selected}
                       onClick={() => setSelectedQuantId(q.id)}
-                      className={`rounded-lg border p-2.5 text-left transition-all ${
-                        selected
-                          ? 'border-[#38bdf8]/60 bg-[#0078d4]/20 shadow-[0_0_0_1px_rgba(56,189,248,0.25)]'
-                          : 'border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.06]'
+                      title={
+                        qOffloadPct === 0
+                          ? 'Fits comfortably in VRAM (0% offload)'
+                          : qOffloadPct <= 20
+                            ? `Borderline fit (${qOffloadPct}% offloaded to system RAM)`
+                            : `Severely offloaded (${qOffloadPct}% offloaded to system RAM)`
+                      }
+                      className={`rounded-lg border p-2.5 text-left transition-all ${outlineClass} ${
+                        selected ? 'ring-2 ring-[#38bdf8] shadow-[0_0_0_1px_rgba(56,189,248,0.35)]' : ''
                       }`}
                     >
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-1">
                         <span className="text-xs font-semibold text-white">{q.label}</span>
                         <span className="text-xs font-medium text-[#7dd3fc]">
                           {formatBytes(q.sizeBytes)}
                         </span>
                       </div>
-                      <div className="mt-1 truncate text-[11px] text-slate-400">{q.qualityNote}</div>
+                      <div className="mt-1 flex items-center justify-between gap-1">
+                        <span className="truncate text-[10.5px] text-slate-400">{q.qualityNote}</span>
+                        <span className={`shrink-0 font-mono text-[10px] font-semibold ${fitBadgeClass}`}>
+                          {fitBadgeText}
+                        </span>
+                      </div>
                     </button>
                   );
                 })}
@@ -975,14 +1072,19 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
               {/* Context Window Slider in 16K Discrete Divisions with Notches & Aligned Labels */}
               <div className="border-t border-white/[0.06] pt-3">
-                <div className="mb-1.5 flex items-center justify-between text-xs">
+                <div className="mb-1 flex items-center justify-between text-xs">
                   <label htmlFor="context-slider" className="font-medium text-slate-200">
-                    Context Window (16K divisions &middot; clamped to {formatContextLength(maxContextTokens)} max)
+                    Context Window (16K divisions)
                   </label>
                   <span className="rounded bg-white/[0.06] px-2 py-0.5 font-mono text-xs text-[#7dd3fc]">
                     {contextTokens.toLocaleString()} tokens ({formatContextLength(contextTokens)})
                   </span>
                 </div>
+                <p className="mb-1.5 text-[11px] font-mono text-slate-400">
+                  Trained Context: {formatContextLength(trainedContextTokens)} &middot; Max Context:{' '}
+                  {formatContextLength(maxContextTokens)}
+                  {isRopeScaled ? ' (RoPE Scaled)' : ''}
+                </p>
 
                 {/* Notched Slider Bar */}
                 <div className="relative my-3 w-full">
@@ -1242,7 +1344,18 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
               </div>
             </section>
 
-            {/* 5. Deployment Progress & Live Smoke Test Results */}
+            {/* 5. Inference & Speed Test Explainer + Results */}
+            <section className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3.5 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                <Zap className="h-3.5 w-3.5 text-[#38bdf8]" aria-hidden={true} />
+                Test Inference &amp; Speed
+              </div>
+              <p className="text-[11px] leading-relaxed text-slate-400">
+                Loads the model into local memory and runs a minimal 1-token test prompt to verify inference and measure response latency (Time-to-First-Token) and generation speed (tokens/sec).
+              </p>
+            </section>
+
+            {/* Deployment Progress & Test Results */}
             {(isDeploying || deployProgress || deployDone || deployError) && (
               <section
                 aria-live="polite"
@@ -1290,7 +1403,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
                     <Zap className="h-4 w-4" aria-hidden={true} />
-                    Smoke Test Passed
+                    Inference &amp; Speed Test Passed
                   </span>
                   <div className="flex items-center gap-3 font-mono text-xs text-slate-200">
                     <span>
@@ -1332,7 +1445,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
                 ) : (
                   <Play className="h-3.5 w-3.5 text-[#38bdf8]" aria-hidden={true} />
                 )}
-                {isTesting ? 'Testing...' : 'Live Smoke Test'}
+                {isTesting ? 'Testing...' : 'Test Inference & Speed'}
               </button>
 
               {isDeploying ? (

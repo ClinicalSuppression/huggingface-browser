@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Download, Heart, Lock, BrainCircuit, Cpu, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Download, Heart, Lock, Cpu, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { HardwareProfile, HfModelSearchResult } from '../../types';
 import { detectReasoningRequirements } from '../../core/presets';
 import {
@@ -7,6 +7,125 @@ import {
   formatCompactNumber,
   formatPipelineTag,
 } from '../utils/format';
+
+interface FeatureBadge {
+  key: string;
+  label: string;
+  title: string;
+  cls: string;
+}
+
+function detectFeatureBadges(model: HfModelSearchResult, isReasoning: boolean): FeatureBadge[] {
+  const badges: FeatureBadge[] = [];
+  const lowerId = model.id.toLowerCase();
+  const lowerTags = (model.tags || []).map((t) => t.toLowerCase());
+  const pipeline = (model.pipeline_tag || '').toLowerCase();
+  const siblingNames = (model.siblings || []).map((s) => s.rfilename.toLowerCase());
+
+  if (
+    lowerTags.some((t) => t === 'mtp' || t.includes('mtp')) ||
+    siblingNames.some((f) => f.includes('mtp')) ||
+    lowerId.includes('-mtp')
+  ) {
+    badges.push({
+      key: 'mtp',
+      label: 'MTP',
+      title: 'Multi-Token Prediction supported',
+      cls: 'border-amber-400/30 bg-amber-500/15 text-amber-300',
+    });
+  }
+
+  if (
+    pipeline === 'image-text-to-text' ||
+    lowerTags.some((t) => t === 'vision' || t === 'image-text-to-text' || t === 'multimodal') ||
+    siblingNames.some((f) => f.includes('mmproj'))
+  ) {
+    badges.push({
+      key: 'vision',
+      label: 'Vision',
+      title: 'Vision-Language / Multimodal input',
+      cls: 'border-cyan-400/30 bg-cyan-500/15 text-cyan-300',
+    });
+  }
+
+  if (
+    pipeline === 'text-to-image' ||
+    pipeline === 'image-to-image' ||
+    lowerTags.some((t) => t === 'diffusion' || t === 'text-to-image' || t === 'image-to-image')
+  ) {
+    badges.push({
+      key: 'imagegen',
+      label: 'ImageGen',
+      title: 'Diffusion / Image Generation',
+      cls: 'border-pink-400/30 bg-pink-500/15 text-pink-300',
+    });
+  }
+
+  if (lowerTags.some((t) => t === 'tools' || t === 'tool-use' || t === 'function-calling')) {
+    badges.push({
+      key: 'tools',
+      label: 'Tools',
+      title: 'Function Calling / Tool Use',
+      cls: 'border-sky-400/30 bg-sky-500/15 text-sky-300',
+    });
+  }
+
+  if (
+    isReasoning ||
+    lowerTags.some((t) => t === 'reasoning' || t === 'thinking' || t === 'deepseek-r1' || t === 'qwq')
+  ) {
+    badges.push({
+      key: 'reasoning',
+      label: 'Reasoning',
+      title: 'Deep Thinking / Reasoning model',
+      cls: 'border-purple-400/30 bg-purple-500/15 text-purple-300',
+    });
+  }
+
+  if (
+    pipeline.includes('audio') ||
+    pipeline.includes('speech') ||
+    lowerTags.some((t) => t === 'audio' || t === 'speech' || t === 'asr')
+  ) {
+    badges.push({
+      key: 'audio',
+      label: 'Audio',
+      title: 'Audio / Speech / ASR',
+      cls: 'border-teal-400/30 bg-teal-500/15 text-teal-300',
+    });
+  }
+
+  if (
+    lowerTags.some((t) => t === 'code' || t === 'coding' || t === 'coder') ||
+    lowerId.includes('coder')
+  ) {
+    badges.push({
+      key: 'code',
+      label: 'Code',
+      title: 'Coding Assistant',
+      cls: 'border-indigo-400/30 bg-indigo-500/15 text-indigo-300',
+    });
+  }
+
+  const hasHeretic = lowerTags.includes('heretic') || lowerId.includes('heretic');
+  const hasAra = lowerTags.includes('ara');
+  const hasUncensored =
+    lowerTags.some((t) => t === 'uncensored' || t === 'abliterated') ||
+    lowerId.includes('uncensored') ||
+    lowerId.includes('abliterated');
+
+  if (hasHeretic || hasAra || hasUncensored) {
+    const label = hasHeretic ? 'Heretic' : hasAra ? 'ARA' : 'Uncensored';
+    badges.push({
+      key: 'uncensored',
+      label,
+      title: 'Uncensored / Ablated alignment',
+      cls: 'border-rose-400/30 bg-rose-500/15 text-rose-300',
+    });
+  }
+
+  return badges;
+}
 
 interface ModelCardProps {
   model: HfModelSearchResult;
@@ -39,7 +158,10 @@ export const ModelCard: React.FC<ModelCardProps> = ({
 
   const isGated = Boolean(model.gated);
   const pipelineLabel = formatPipelineTag(model.pipeline_tag);
-  const checksumVerified = !model.disabled;
+  const featureBadges = useMemo(
+    () => detectFeatureBadges(model, reasoningInfo.isThinkingModel),
+    [model, reasoningInfo.isThinkingModel]
+  );
 
   const renderBestFitBadge = () => {
     if (!bestFit) return null;
@@ -89,7 +211,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
       aria-label={`Inspect ${model.id}, ${pipelineLabel}${isGated ? ', Gated model' : ''}`}
     >
       <div>
-        {/* Top Row: Author + Compact Status Tags */}
+        {/* Top Row: Author + Gated Tag */}
         <div className="mb-1 flex items-center justify-between gap-2">
           <span className="truncate text-[11px] font-medium text-slate-400">{author}</span>
           <div className="flex shrink-0 items-center gap-1">
@@ -100,12 +222,6 @@ export const ModelCard: React.FC<ModelCardProps> = ({
               >
                 <Lock className="h-2.5 w-2.5" aria-hidden={true} />
                 Gated
-              </span>
-            )}
-            {reasoningInfo.isThinkingModel && (
-              <span className="inline-flex items-center gap-0.5 rounded border border-purple-400/30 bg-purple-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-300">
-                <BrainCircuit className="h-2.5 w-2.5" aria-hidden={true} />
-                Reasoning
               </span>
             )}
           </div>
@@ -124,23 +240,25 @@ export const ModelCard: React.FC<ModelCardProps> = ({
         )}
       </div>
 
-      {/* Compact Single-Line Footer + Best Fit & Checksum */}
+      {/* Compact Footer: Best Fit, Feature Badges & Stats */}
       <div className="mt-2.5 space-y-1.5 border-t border-white/[0.06] pt-2">
         <div className="flex items-center justify-between gap-1.5">
           {renderBestFitBadge()}
-          <span
-            className={`shrink-0 font-mono text-[10px] font-medium ${
-              checksumVerified ? 'text-emerald-400' : 'text-rose-400'
-            }`}
-            title={
-              checksumVerified
-                ? 'SHA-256 checksum verified'
-                : 'Checksum mismatch detected'
-            }
-          >
-            {checksumVerified ? 'Checksum: ✓' : 'Checksum: ✗'}
-          </span>
         </div>
+
+        {featureBadges.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1">
+            {featureBadges.map((badge) => (
+              <span
+                key={badge.key}
+                title={badge.title}
+                className={`rounded border px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wide ${badge.cls}`}
+              >
+                {badge.label}
+              </span>
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
           <div className="flex min-w-0 items-center gap-2.5">

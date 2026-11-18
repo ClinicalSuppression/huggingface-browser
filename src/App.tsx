@@ -98,7 +98,17 @@ export function App() {
   );
 
   const refreshHardware = useCallback(async () => {
-    const hw = await bridgeService.getHardwareProfile();
+    const [hw, live] = await Promise.all([
+      bridgeService.getHardwareProfile(),
+      bridgeService.getLiveVramUsage(0)
+    ]);
+    if (hw && hw.gpus.length > 0) {
+      setHardware({
+        ...hw,
+        gpus: [{ ...hw.gpus[0], vramFreeBytes: live.freeBytes }, ...hw.gpus.slice(1)],
+      });
+      return;
+    }
     setHardware(hw);
   }, []);
 

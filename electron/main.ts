@@ -24,6 +24,7 @@ async function createWindow() {
     titleBarStyle: 'default',
     title: 'HF Browser',
     backgroundColor: '#0f172a', // Deep dark slate background
+    icon: path.join(__dirname, '../../assets/icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

@@ -167,6 +167,13 @@ export async function detectHardware(): Promise<HardwareProfile> {
       vramFreeBytes: 15.5 * 1024 * 1024 * 1024,
       driverVersion: '32.0.32015.7029',
     });
+  } else {
+    try {
+      const live = await getLiveVramUsage(0);
+      (gpus[0] as any).vramFreeBytes = live.freeBytes;
+    } catch {
+      // Fallback
+    }
   }
 
   return {

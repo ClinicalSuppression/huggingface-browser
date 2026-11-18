@@ -32,37 +32,37 @@ interface DiscoveryViewProps {
 }
 
 const TASK_OPTIONS: Array<{ id: TaskFilter; label: string }> = [
-  { id: 'all', label: 'All Tasks' },
+  { id: 'all', label: 'All' },
   { id: 'any-to-any', label: 'Any-to-Any' },
-  { id: 'text-generation', label: 'Text Generation' },
-  { id: 'image-text-to-text', label: 'Multimodal Vision' },
-  { id: 'conversational', label: 'Conversational' },
-  { id: 'coding', label: 'Code Generation' },
+  { id: 'text-generation', label: 'Text Gen' },
+  { id: 'image-text-to-text', label: 'Vision' },
+  { id: 'conversational', label: 'Chat' },
+  { id: 'coding', label: 'Code' },
   { id: 'feature-extraction', label: 'Embeddings' },
 ];
 
 const FORMAT_OPTIONS: Array<{ id: FormatFilter; label: string }> = [
-  { id: 'all', label: 'All Formats' },
-  { id: 'gguf', label: 'GGUF Only' },
-  { id: 'safetensors', label: 'SafeTensors Only' },
-  { id: 'fp8', label: 'FP8 / Compressed' },
+  { id: 'all', label: 'All' },
+  { id: 'gguf', label: 'GGUF' },
+  { id: 'safetensors', label: 'SafeTensors' },
+  { id: 'fp8', label: 'FP8' },
 ];
 
 const ALIGNMENT_OPTIONS: Array<{ id: AlignmentFilter; label: string }> = [
-  { id: 'all', label: 'All Alignments' },
-  { id: 'uncensored', label: 'Uncensored (ARA / Abliterated)' },
-  { id: 'aligned', label: 'Standard / Aligned Only' },
+  { id: 'all', label: 'All' },
+  { id: 'uncensored', label: 'Uncensored' },
+  { id: 'aligned', label: 'Standard' },
 ];
 
 const FAMILY_OPTIONS: Array<{ id: FamilyFilter; label: string }> = [
-  { id: 'all', label: 'All Families' },
+  { id: 'all', label: 'All' },
   { id: 'llama', label: 'Llama' },
   { id: 'qwen', label: 'Qwen' },
   { id: 'deepseek', label: 'DeepSeek' },
   { id: 'mistral', label: 'Mistral' },
   { id: 'gemma', label: 'Gemma' },
   { id: 'phi', label: 'Phi' },
-  { id: 'lfm', label: 'LFM / Liquid' },
+  { id: 'lfm', label: 'Liquid' },
   { id: 'command-r', label: 'Command R' },
   { id: 'starcoder', label: 'StarCoder' },
   { id: 'glm', label: 'GLM' },
@@ -74,30 +74,30 @@ const FAMILY_OPTIONS: Array<{ id: FamilyFilter; label: string }> = [
 ];
 
 const HARDWARE_FIT_OPTIONS: Array<{ id: HardwareFitFilter; label: string }> = [
-  { id: 'all', label: 'All Models' },
-  { id: 'gpu', label: 'Fits My GPU (Full GPU Fit)' },
-  { id: 'partial', label: 'Partial GPU Offload' },
-  { id: 'cpu', label: 'CPU Only' },
+  { id: 'all', label: 'All' },
+  { id: 'gpu', label: 'Full GPU' },
+  { id: 'partial', label: 'Partial' },
+  { id: 'cpu', label: 'CPU' },
 ];
 
 const PARAM_SIZE_OPTIONS: Array<{ id: ParamSizeFilter; label: string }> = [
-  { id: 'all', label: 'All Sizes' },
-  { id: 'under-4b', label: 'Under 4B' },
-  { id: '7b-9b', label: '7B – 9B' },
-  { id: '12b-16b', label: '12B – 16B' },
-  { id: '20b-40b', label: '20B – 40B' },
+  { id: 'all', label: 'All' },
+  { id: 'under-4b', label: '< 4B' },
+  { id: '7b-9b', label: '7B–9B' },
+  { id: '12b-16b', label: '12B–16B' },
+  { id: '20b-40b', label: '20B–40B' },
   { id: '70b-plus', label: '70B+' },
 ];
 
 const SORT_OPTIONS: Array<{ id: SortOption; label: string }> = [
   { id: 'trendingScore', label: 'Trending' },
-  { id: 'downloads', label: 'Most Downloads' },
-  { id: 'likes', label: 'Most Liked' },
-  { id: 'lastModified', label: 'Recently Updated' },
+  { id: 'downloads', label: 'Downloads' },
+  { id: 'likes', label: 'Likes' },
+  { id: 'lastModified', label: 'Recent' },
 ];
 
 const selectBaseClass =
-  'w-full rounded-lg border border-white/[0.1] bg-[#0f172a] px-2.5 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:border-white/[0.2] focus:border-[#38bdf8] focus:outline-none';
+  'h-7 w-full rounded-md border border-white/[0.1] bg-[#0f172a] px-2 py-0.5 text-[11px] font-medium text-slate-200 transition-colors hover:border-white/[0.2] focus:border-[#38bdf8] focus:outline-none';
 
 export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
   query,
@@ -232,7 +232,7 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
 
           <div className="flex flex-col gap-1">
             <label htmlFor="filter-alignment" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Uncensored
+              Content
             </label>
             <select
               id="filter-alignment"
@@ -250,7 +250,7 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
 
           <div className="flex flex-col gap-1">
             <label htmlFor="filter-family" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Architecture
+              Arch
             </label>
             <select
               id="filter-family"
@@ -268,7 +268,7 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
 
           <div className="flex flex-col gap-1">
             <label htmlFor="filter-hardware-fit" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Hardware Fit
+              Fit
             </label>
             <select
               id="filter-hardware-fit"
@@ -286,7 +286,7 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
 
           <div className="flex flex-col gap-1">
             <label htmlFor="filter-param-size" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Parameter Size
+              Size
             </label>
             <select
               id="filter-param-size"
@@ -304,7 +304,7 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
 
           <div className="flex flex-col gap-1">
             <label htmlFor="discovery-sort" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Sort Order
+              Sort
             </label>
             <select
               id="discovery-sort"

@@ -7,7 +7,6 @@ import {
   KeyRound,
   Settings,
   Cpu,
-  ShieldCheck,
   Sparkles,
 } from 'lucide-react';
 import { HardwareProfile } from '../../types';
@@ -71,19 +70,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       aria-label="Primary navigation"
-      className="fluent-mica flex h-full w-64 shrink-0 flex-col border-r border-white/[0.08] select-none"
+      className="fluent-mica flex h-full w-52 shrink-0 flex-col border-r border-white/[0.08] select-none"
     >
       {/* App Header */}
       <div className="flex items-center gap-3 px-4 pt-5 pb-4">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-[#0078d4] to-[#38bdf8] shadow-md shadow-[#0078d4]/25">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#0078d4] to-[#38bdf8] shadow-md shadow-[#0078d4]/25">
           <Sparkles className="h-5 w-5 text-white" aria-hidden={true} />
         </div>
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold tracking-tight text-slate-100">
             HF Browser
-          </div>
-          <div className="truncate text-[11px] font-medium text-slate-400">
-            Windows 11 Model Hub
           </div>
         </div>
       </div>
@@ -170,17 +166,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   style={{ width: `${Math.max(12, vramPct)}%` }}
                 />
               </div>
-              <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-400">
-                <span>{formatBytes(primaryGpu.vramFreeBytes)} free</span>
-                <span>{formatBytes(primaryGpu.vramTotalBytes)} total</span>
+              <div className="mt-1.5 truncate text-[10.5px] text-slate-400">
+                {formatBytes(primaryGpu.vramFreeBytes)} free / {formatBytes(primaryGpu.vramTotalBytes)} total
               </div>
             </>
           )}
-
-          <div className="mt-2.5 flex items-center gap-1.5 border-t border-white/[0.06] pt-2 text-[11px] text-slate-400">
-            <ShieldCheck className="h-3.5 w-3.5 text-slate-400" aria-hidden={true} />
-            <span>Windows Credential Vault</span>
-          </div>
         </button>
       </div>
     </aside>

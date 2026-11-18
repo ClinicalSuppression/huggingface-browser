@@ -86,12 +86,14 @@ const STANDARD_QUANT_PROFILES: Array<{
   qualityNote: string;
   format: 'gguf' | 'safetensors' | 'fp8';
 }> = [
-  { id: 'IQ4_XS', label: 'IQ4_XS', bitsPerWeight: 4.25, qualityNote: 'Compact 4-bit', format: 'gguf' },
-  { id: 'Q4_K_M', label: 'Q4_K_M', bitsPerWeight: 4.85, qualityNote: 'Recommended balance', format: 'gguf' },
-  { id: 'Q5_K_M', label: 'Q5_K_M', bitsPerWeight: 5.65, qualityNote: 'High fidelity', format: 'gguf' },
-  { id: 'Q6_K', label: 'Q6_K', bitsPerWeight: 6.56, qualityNote: 'Near-lossless', format: 'gguf' },
-  { id: 'Q8_0', label: 'Q8_0', bitsPerWeight: 8.5, qualityNote: '8-bit reference', format: 'gguf' },
-  { id: 'FP8', label: 'FP8', bitsPerWeight: 8.0, qualityNote: 'Tensor Core FP8', format: 'fp8' },
+  { id: 'Q2_K', label: 'Q2_K', bitsPerWeight: 2.6, qualityNote: '~89.0% accuracy (Extreme compression for constrained VRAM)', format: 'gguf' },
+  { id: 'Q3_K_M', label: 'Q3_K_M', bitsPerWeight: 3.5, qualityNote: '~94.5% accuracy (Significant compression, noticeable logic loss)', format: 'gguf' },
+  { id: 'IQ4_XS', label: 'IQ4_XS', bitsPerWeight: 4.25, qualityNote: '~97.8% accuracy (Importance matrix weighted 4-bit)', format: 'gguf' },
+  { id: 'Q4_K_M', label: 'Q4_K_M', bitsPerWeight: 4.85, qualityNote: '~98.2% accuracy (Optimal speed & VRAM sweet spot for chat/code)', format: 'gguf' },
+  { id: 'Q5_K_M', label: 'Q5_K_M', bitsPerWeight: 5.65, qualityNote: '~99.1% accuracy (Balanced precision, recommended for reasoning)', format: 'gguf' },
+  { id: 'Q6_K', label: 'Q6_K', bitsPerWeight: 6.56, qualityNote: '~99.5% accuracy (High fidelity, imperceptible degradation)', format: 'gguf' },
+  { id: 'Q8_0', label: 'Q8_0', bitsPerWeight: 8.5, qualityNote: '~99.8% accuracy (Near-lossless, minimal perplexity loss)', format: 'gguf' },
+  { id: 'FP8', label: 'FP8', bitsPerWeight: 8.0, qualityNote: '~99.8% accuracy (Near-lossless, minimal perplexity loss)', format: 'fp8' },
 ];
 
 export function buildQuantOptionsForModel(model: HfModelSearchResult): QuantOption[] {

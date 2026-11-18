@@ -84,6 +84,9 @@ export const InstalledModelsView: React.FC<InstalledModelsViewProps> = ({
             <p className="mt-0.5 text-xs text-slate-400">
               {models.length} local models occupying {formatBytes(totalSize)} across detected runtimes
             </p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Test Inference &amp; Speed loads the model into local memory and runs a minimal 1-token test prompt to verify inference and measure response latency (Time-to-First-Token) and generation speed (tokens/sec).
+            </p>
           </div>
           <button
             type="button"
@@ -199,6 +202,7 @@ export const InstalledModelsView: React.FC<InstalledModelsViewProps> = ({
                         type="button"
                         onClick={() => handleTest(item)}
                         disabled={isTesting}
+                        title="Loads the model into local memory and runs a minimal 1-token test prompt to verify inference and measure response latency (Time-to-First-Token) and generation speed (tokens/sec)."
                         className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/[0.1] disabled:opacity-50"
                       >
                         {isTesting ? (
@@ -206,7 +210,7 @@ export const InstalledModelsView: React.FC<InstalledModelsViewProps> = ({
                         ) : (
                           <Play className="h-3.5 w-3.5 text-[#38bdf8]" aria-hidden={true} />
                         )}
-                        {isTesting ? 'Testing...' : 'Smoke Test'}
+                        {isTesting ? 'Testing...' : 'Test Inference & Speed'}
                       </button>
 
                       <button
