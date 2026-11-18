@@ -20,6 +20,8 @@ import {
   RotateCcw,
   Globe,
   RotateCw,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import {
   HardwareProfile,
@@ -252,6 +254,64 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
   const [isTesting, setIsTesting] = useState(false);
   const [smokeResult, setSmokeResult] = useState<VerificationResult | null>(null);
+
+  // Drag-to-resize panel width (default ~560px / 38% screen width, persisted in localStorage)
+  const [drawerWidth, setDrawerWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('hf_browser_drawer_width');
+      if (saved) {
+        const parsed = Number(saved);
+        if (parsed >= 420 && parsed <= 1600) return parsed;
+      }
+    } catch {}
+    return Math.min(580, Math.max(480, Math.round(window.innerWidth * 0.38)));
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [prevWidth, setPrevWidth] = useState<number>(580);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = window.innerWidth - e.clientX;
+      const minWidth = 420;
+      const maxWidth = Math.round(window.innerWidth * 0.85);
+      const clamped = Math.max(minWidth, Math.min(maxWidth, newWidth));
+      setDrawerWidth(clamped);
+      if (isMaximized) setIsMaximized(false);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      try {
+        localStorage.setItem('hf_browser_drawer_width', String(drawerWidth));
+      } catch {}
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, drawerWidth, isMaximized]);
+
+  const toggleMaximize = () => {
+    if (isMaximized) {
+      setDrawerWidth(prevWidth || 580);
+      setIsMaximized(false);
+    } else {
+      setPrevWidth(drawerWidth);
+      setDrawerWidth(Math.round(window.innerWidth * 0.85));
+      setIsMaximized(true);
+    }
+  };
 
   const currentStepIndex = useMemo(() => {
     let closestIdx = 0;
@@ -507,8 +567,20 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
     <aside
       role="region"
       aria-label="Model Inspector &amp; Webpage"
-      className="fixed inset-y-0 right-0 z-40 w-full max-w-4xl flex flex-col border-l border-white/[0.1] shadow-2xl bg-[#090d16] animate-in slide-in-from-right duration-200"
+      className="fixed inset-y-0 right-0 z-40 flex flex-col border-l border-white/[0.1] shadow-2xl bg-[#090d16] animate-in slide-in-from-right duration-200 select-none"
+      style={{ width: `${drawerWidth}px` }}
     >
+      {/* Draggable Left Resize Handle */}
+      <div
+        onMouseDown={handleMouseDown}
+        className={`absolute inset-y-0 -left-2 w-4 cursor-col-resize z-50 flex items-center justify-center transition-colors group ${
+          isResizing ? 'bg-[#38bdf8]/40' : 'hover:bg-[#38bdf8]/20'
+        }`}
+        title="Drag left/right to resize panel"
+      >
+        <div className="h-10 w-1 rounded-full bg-white/20 group-hover:bg-[#38bdf8] transition-colors" />
+      </div>
+
       {/* Drawer Header */}
       <header className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-6 py-3.5 bg-[#0b0f19]">
         <div className="min-w-0">
@@ -539,6 +611,18 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleMaximize}
+            title={isMaximized ? 'Restore panel width' : 'Maximize panel width'}
+            className="rounded-lg border border-white/[0.08] bg-white/[0.04] p-2 text-slate-300 transition-colors hover:bg-white/[0.1] hover:text-white"
+          >
+            {isMaximized ? (
+              <Minimize2 className="h-4 w-4" aria-hidden={true} />
+            ) : (
+              <Maximize2 className="h-4 w-4" aria-hidden={true} />
+            )}
+          </button>
           <button
             type="button"
             onClick={handleOpenInBrowser}
@@ -664,7 +748,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
           <webview
             ref={webviewRef}
             src={`https://huggingface.co/${model.id}`}
-            className="flex-1 w-full h-full border-0 bg-white"
+            className={`flex-1 w-full h-full border-0 bg-white ${isResizing ? 'pointer-events-none' : ''}`}
             allowpopups={true}
           />
         </div>
