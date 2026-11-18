@@ -14,10 +14,12 @@ import {
   Terminal,
   Loader2,
   StopCircle,
-  RotateCcw,
   ExternalLink,
-  FileText,
   Sliders,
+  FileText,
+  RotateCcw,
+  Globe,
+  RotateCw,
 } from 'lucide-react';
 import {
   HardwareProfile,
@@ -55,7 +57,7 @@ interface ModelDetailDrawerProps {
   onDeploySuccess?: (runtimeId: RuntimeId, modelTag: string, sizeBytes: number) => void;
 }
 
-type DrawerTabId = 'deploy' | 'readme';
+type DrawerTabId = 'webpage' | 'deploy' | 'readme';
 
 interface AuthorGenConfig {
   temperature?: number;
@@ -113,110 +115,78 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
         </strong>
       );
     }
-    const linkMatch = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+    const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
     if (linkMatch) {
       return (
         <a
           key={idx}
           href={linkMatch[2]}
           target="_blank"
-          rel="noopener noreferrer"
-          className="text-[#38bdf8] underline decoration-[#38bdf8]/40 hover:text-[#7dd3fc]"
+          rel="noreferrer"
+          className="text-[#38bdf8] underline hover:text-[#7dd3fc]"
         >
           {linkMatch[1]}
         </a>
       );
     }
-    return <React.Fragment key={idx}>{token}</React.Fragment>;
+    return token;
   });
 }
 
-const SanitizedMarkdownView: React.FC<{ markdown: string }> = ({ markdown }) => {
-  const cleaned = useMemo(() => stripYamlFrontmatter(markdown), [markdown]);
-  const lines = useMemo(() => cleaned.split(/\r?\n/), [cleaned]);
+function SanitizedMarkdownView({ markdown }: { markdown: string }) {
+  const cleaned = stripYamlFrontmatter(markdown);
+  const lines = cleaned.split('\n');
 
-  const blocks: React.ReactNode[] = [];
-  let inCodeBlock = false;
-  let codeLines: string[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (line.trimStart().startsWith('```')) {
-      if (inCodeBlock) {
-        blocks.push(
-          <pre
-            key={`code-${i}`}
-            className="overflow-x-auto rounded-lg border border-white/[0.08] bg-[#05080f] p-3 font-mono text-[11px] leading-relaxed text-slate-200"
-          >
-            <code>{codeLines.join('\n')}</code>
-          </pre>
-        );
-        codeLines = [];
-        inCodeBlock = false;
-      } else {
-        inCodeBlock = true;
-      }
-      continue;
-    }
-
-    if (inCodeBlock) {
-      codeLines.push(line);
-      continue;
-    }
-
-    if (!line.trim()) {
-      continue;
-    }
-
-    if (line.startsWith('### ')) {
-      blocks.push(
-        <h3 key={`h3-${i}`} className="pt-2 text-sm font-semibold text-white">
-          {renderInlineMarkdown(line.slice(4))}
-        </h3>
-      );
-    } else if (line.startsWith('## ')) {
-      blocks.push(
-        <h2
-          key={`h2-${i}`}
-          className="border-b border-white/[0.07] pt-3 pb-1 text-base font-semibold text-white"
-        >
-          {renderInlineMarkdown(line.slice(3))}
-        </h2>
-      );
-    } else if (line.startsWith('# ')) {
-      blocks.push(
-        <h1 key={`h1-${i}`} className="pt-2 text-lg font-bold text-white">
-          {renderInlineMarkdown(line.slice(2))}
-        </h1>
-      );
-    } else if (/^[-*]\s+/.test(line.trimStart())) {
-      blocks.push(
-        <div key={`li-${i}`} className="flex items-start gap-2 pl-2 text-xs leading-relaxed text-slate-300">
-          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#38bdf8]" aria-hidden={true} />
-          <span>{renderInlineMarkdown(line.trimStart().replace(/^[-*]\s+/, ''))}</span>
-        </div>
-      );
-    } else if (line.trimStart().startsWith('> ')) {
-      blocks.push(
-        <blockquote
-          key={`bq-${i}`}
-          className="border-l-2 border-[#38bdf8]/50 bg-white/[0.02] pl-3 py-1 text-xs italic text-slate-300"
-        >
-          {renderInlineMarkdown(line.trimStart().slice(2))}
-        </blockquote>
-      );
-    } else {
-      blocks.push(
-        <p key={`p-${i}`} className="text-xs leading-relaxed text-slate-300">
-          {renderInlineMarkdown(line)}
-        </p>
-      );
-    }
-  }
-
-  return <div className="space-y-2.5">{blocks}</div>;
-};
+  return (
+    <div className="space-y-3 font-sans text-xs leading-relaxed text-slate-300">
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <div key={idx} className="h-2" />;
+        }
+        if (trimmed.startsWith('# ')) {
+          return (
+            <h1 key={idx} className="pt-2 text-base font-bold text-white">
+              {trimmed.slice(2)}
+            </h1>
+          );
+        }
+        if (trimmed.startsWith('## ')) {
+          return (
+            <h2 key={idx} className="pt-2 text-sm font-semibold text-white border-b border-white/[0.08] pb-1">
+              {trimmed.slice(3)}
+            </h2>
+          );
+        }
+        if (trimmed.startsWith('### ')) {
+          return (
+            <h3 key={idx} className="pt-1.5 text-xs font-semibold text-[#7dd3fc]">
+              {trimmed.slice(4)}
+            </h3>
+          );
+        }
+        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+          return (
+            <li key={idx} className="ml-4 list-disc text-slate-300">
+              {renderInlineMarkdown(trimmed.slice(2))}
+            </li>
+          );
+        }
+        if (trimmed.startsWith('> ')) {
+          return (
+            <blockquote
+              key={idx}
+              className="border-l-2 border-[#38bdf8]/50 bg-white/[0.02] px-3 py-1.5 text-slate-400 italic"
+            >
+              {renderInlineMarkdown(trimmed.slice(2))}
+            </blockquote>
+          );
+        }
+        return <p key={idx}>{renderInlineMarkdown(trimmed)}</p>;
+      })}
+    </div>
+  );
+}
 
 export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   model,
@@ -230,33 +200,45 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 }) => {
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const webviewRef = useRef<any>(null);
 
   const quantOptions = useMemo(() => (model ? buildQuantOptionsForModel(model) : []), [model]);
   const arch = useMemo(() => (model ? estimateModelArchitecture(model) : null), [model]);
-  const maxContextTokens = useMemo(
-    () => (model ? estimateMaxContextTokens(model) : 32768),
-    [model]
-  );
+  const maxContextTokens = useMemo(() => (model ? estimateMaxContextTokens(model) : 32768), [model]);
   const reasoningInfo = useMemo(
     () => (model ? detectReasoningRequirements(model.id, model.tags || []) : null),
     [model]
   );
 
-  const [activeTab, setActiveTab] = useState<DrawerTabId>('deploy');
+  // 16K Discrete Context Steps
+  const discreteContextSteps = useMemo(() => {
+    const steps: number[] = [];
+    if (maxContextTokens <= 8192) {
+      steps.push(4096, 8192);
+    } else {
+      steps.push(8192); // Base starting step
+      for (let t = 16384; t <= maxContextTokens; t += 16384) {
+        steps.push(t);
+      }
+      if (!steps.includes(maxContextTokens)) {
+        steps.push(maxContextTokens);
+      }
+    }
+    return steps;
+  }, [maxContextTokens]);
+
+  const [activeTab, setActiveTab] = useState<DrawerTabId>('webpage');
   const [selectedQuantId, setSelectedQuantId] = useState<string>('Q4_K_M');
   const [contextTokens, setContextTokens] = useState<number>(8192);
   const [presetIntent, setPresetIntent] = useState<PresetIntent>(defaultPresetIntent);
-  const [presetParams, setPresetParams] = useState<EditablePresetParams>(() => {
-    const base = getPurposePreset(defaultPresetIntent);
-    return {
-      temperature: base.temperature,
-      topP: base.topP,
-      topK: base.topK,
-      minP: base.minP,
-      repeatPenalty: base.repeatPenalty,
-    };
-  });
   const [authorConfig, setAuthorConfig] = useState<AuthorGenConfig | null>(null);
+  const [presetParams, setPresetParams] = useState<EditablePresetParams>({
+    temperature: 0.7,
+    topP: 0.9,
+    topK: 40,
+    minP: 0.05,
+    repeatPenalty: 1.1,
+  });
   const [thinkBudgetTokens, setThinkBudgetTokens] = useState<number>(8192);
   const [selectedRuntime, setSelectedRuntime] = useState<RuntimeId>('ollama');
 
@@ -270,6 +252,19 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
   const [isTesting, setIsTesting] = useState(false);
   const [smokeResult, setSmokeResult] = useState<VerificationResult | null>(null);
+
+  const currentStepIndex = useMemo(() => {
+    let closestIdx = 0;
+    let minDiff = Infinity;
+    discreteContextSteps.forEach((s, idx) => {
+      const diff = Math.abs(s - contextTokens);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIdx = idx;
+      }
+    });
+    return closestIdx;
+  }, [contextTokens, discreteContextSteps]);
 
   const buildDefaultParamsForIntent = (
     intent: PresetIntent,
@@ -288,7 +283,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   // Reset state & fetch README + generation_config.json whenever a new model is opened
   useEffect(() => {
     if (!model) return;
-    setActiveTab('deploy');
+    setActiveTab('webpage'); // Default to live webpage on the right!
 
     const opts = buildQuantOptionsForModel(model);
     const defaultQ = opts.find((o) => o.id === 'Q4_K_M') || opts[0];
@@ -334,7 +329,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
         setPresetParams(buildDefaultParamsForIntent(initialIntent, parsed));
       })
       .catch(() => {
-        // Offline or missing generation_config.json — keep preset baseline
+        // Offline or missing generation_config.json
       });
 
     // Fetch Hugging Face README.md
@@ -365,8 +360,6 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
             `- **Pipeline:** ${formatPipelineTag(model.pipeline_tag)}`,
             `- **Downloads:** ${(model.downloads || 0).toLocaleString()}`,
             `- **Likes:** ${(model.likes || 0).toLocaleString()}`,
-            '',
-            '> Live README.md could not be fetched (offline or gated repository). Use **Open on Hugging Face** above to view in your browser.',
           ].join('\n');
           setReadmeMarkdown(fallback);
           setIsLoadingReadme(false);
@@ -511,50 +504,49 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   };
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
-        aria-hidden="true"
-        onClick={onClose}
-      />
-
-      {/* Right-Aligned Drawer */}
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="drawer-model-title"
-        className="fixed inset-y-0 right-0 z-50 w-full max-w-3xl flex flex-col border-l border-white/[0.1] shadow-2xl bg-[#090d16]"
-      >
-        {/* Drawer Header */}
-        <header className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-6 py-4">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-slate-400">{model.author}</span>
-              <span className="rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[11px] text-slate-300">
-                {formatPipelineTag(model.pipeline_tag)}
+    <aside
+      role="region"
+      aria-label="Model Inspector &amp; Webpage"
+      className="fixed inset-y-0 right-0 z-40 w-full max-w-4xl flex flex-col border-l border-white/[0.1] shadow-2xl bg-[#090d16] animate-in slide-in-from-right duration-200"
+    >
+      {/* Drawer Header */}
+      <header className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-6 py-3.5 bg-[#0b0f19]">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-slate-400">{model.author}</span>
+            <span className="rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[11px] text-slate-300">
+              {formatPipelineTag(model.pipeline_tag)}
+            </span>
+            {Boolean(model.gated) && (
+              <span className="inline-flex items-center gap-1 rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                <Lock className="h-3 w-3" aria-hidden={true} />
+                Gated Repo
               </span>
-              {Boolean(model.gated) && (
-                <span className="inline-flex items-center gap-1 rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-300">
-                  <Lock className="h-3 w-3" aria-hidden={true} />
-                  Gated Repo
-                </span>
-              )}
-              {reasoningInfo?.isThinkingModel && (
-                <span className="inline-flex items-center gap-1 rounded border border-purple-400/30 bg-purple-500/15 px-2 py-0.5 text-[11px] font-medium text-purple-300">
-                  <BrainCircuit className="h-3 w-3" aria-hidden={true} />
-                  Thinking Model
-                </span>
-              )}
-            </div>
-            <h2
-              id="drawer-model-title"
-              className="mt-1 truncate text-lg font-semibold tracking-tight text-white"
-            >
-              {model.id.split('/').slice(1).join('/') || model.id}
-            </h2>
+            )}
+            {reasoningInfo?.isThinkingModel && (
+              <span className="inline-flex items-center gap-1 rounded border border-purple-400/30 bg-purple-500/15 px-2 py-0.5 text-[11px] font-medium text-purple-300">
+                <BrainCircuit className="h-3 w-3" aria-hidden={true} />
+                Thinking Model
+              </span>
+            )}
           </div>
+          <h2
+            id="drawer-model-title"
+            className="mt-1 truncate text-base font-semibold tracking-tight text-white"
+          >
+            {model.id.split('/').slice(1).join('/') || model.id}
+          </h2>
+        </div>
 
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleOpenInBrowser}
+            title="Open in external browser"
+            className="rounded-lg border border-white/[0.08] bg-white/[0.04] p-2 text-slate-300 transition-colors hover:bg-white/[0.1] hover:text-white"
+          >
+            <ExternalLink className="h-4 w-4" aria-hidden={true} />
+          </button>
           <button
             ref={closeBtnRef}
             type="button"
@@ -564,14 +556,33 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
           >
             <X className="h-4 w-4" aria-hidden={true} />
           </button>
-        </header>
+        </div>
+      </header>
 
-        {/* Top Drawer Tabs */}
-        <div
-          role="tablist"
-          aria-label="Model detail views"
-          className="flex items-center gap-1 border-b border-white/[0.08] bg-[#0c1220] px-6 py-2"
-        >
+      {/* Top Navigation Tabs */}
+      <div
+        role="tablist"
+        aria-label="Model detail views"
+        className="flex items-center justify-between border-b border-white/[0.08] bg-[#0c1220] px-6 py-2"
+      >
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            role="tab"
+            id="tab-webpage"
+            aria-selected={activeTab === 'webpage'}
+            aria-controls="panel-webpage"
+            onClick={() => setActiveTab('webpage')}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              activeTab === 'webpage'
+                ? 'bg-[#0078d4]/25 text-[#7dd3fc] border border-[#38bdf8]/40'
+                : 'text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 border border-transparent'
+            }`}
+          >
+            <Globe className="h-3.5 w-3.5" aria-hidden={true} />
+            Hugging Face Webpage
+          </button>
+
           <button
             type="button"
             role="tab"
@@ -579,7 +590,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
             aria-selected={activeTab === 'deploy'}
             aria-controls="panel-deploy"
             onClick={() => setActiveTab('deploy')}
-            className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
               activeTab === 'deploy'
                 ? 'bg-[#0078d4]/25 text-[#7dd3fc] border border-[#38bdf8]/40'
                 : 'text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 border border-transparent'
@@ -588,6 +599,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
             <Sliders className="h-3.5 w-3.5" aria-hidden={true} />
             Deployment &amp; Sizing
           </button>
+
           <button
             type="button"
             role="tab"
@@ -595,7 +607,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
             aria-selected={activeTab === 'readme'}
             aria-controls="panel-readme"
             onClick={() => setActiveTab('readme')}
-            className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
               activeTab === 'readme'
                 ? 'bg-[#0078d4]/25 text-[#7dd3fc] border border-[#38bdf8]/40'
                 : 'text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 border border-transparent'
@@ -606,531 +618,625 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
           </button>
         </div>
 
-        {/* Tab Panel 1: Deployment & Sizing */}
-        {activeTab === 'deploy' ? (
-          <>
-            <div
-              id="panel-deploy"
-              role="tabpanel"
-              aria-labelledby="tab-deploy"
-              className="flex-1 space-y-6 overflow-y-auto px-6 py-5"
-            >
-              {/* 1. GGUF Quantization Selector */}
-              <section aria-labelledby="quant-heading">
-                <div className="mb-2.5 flex items-center justify-between">
-                  <h3 id="quant-heading" className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-                    Quantization Artifact
-                  </h3>
-                  <span className="truncate text-xs text-slate-400">{selectedQuant.filename}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Quantization format">
-                  {quantOptions.map((q) => {
-                    const selected = q.id === selectedQuant.id;
-                    return (
-                      <button
-                        key={q.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={selected}
-                        onClick={() => setSelectedQuantId(q.id)}
-                        className={`rounded-lg border p-2.5 text-left transition-all ${
-                          selected
-                            ? 'border-[#38bdf8]/60 bg-[#0078d4]/20 shadow-[0_0_0_1px_rgba(56,189,248,0.25)]'
-                            : 'border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.06]'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-white">{q.label}</span>
-                          <span className="text-xs font-medium text-[#7dd3fc]">
-                            {formatBytes(q.sizeBytes)}
-                          </span>
-                        </div>
-                        <div className="mt-1 truncate text-[11px] text-slate-400">{q.qualityNote}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-
-              {/* 2. Real-time Hardware Sizing Meter with 512MB Safe Headroom */}
-              <section
-                aria-labelledby="sizing-heading"
-                className="fluent-card rounded-xl p-4 space-y-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3
-                    id="sizing-heading"
-                    className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-200"
-                  >
-                    <Cpu className="h-4 w-4 text-[#38bdf8]" aria-hidden={true} />
-                    Real-Time Hardware Sizing
-                    {activeGpu && (
-                      <span className="font-normal normal-case text-slate-400">
-                        ({activeGpu.name})
-                      </span>
-                    )}
-                  </h3>
-
-                  {fitResult && (
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-0.5 text-xs font-medium ${
-                        fitResult.status === 'supported'
-                          ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
-                          : fitResult.status === 'conditional'
-                            ? 'border-amber-500/35 bg-amber-500/15 text-amber-300'
-                            : 'border-rose-500/35 bg-rose-500/15 text-rose-300'
-                      }`}
-                    >
-                      {fitResult.status === 'supported' ? (
-                        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden={true} />
-                      ) : (
-                        <AlertTriangle className="h-3.5 w-3.5" aria-hidden={true} />
-                      )}
-                      {fitResult.status === 'supported'
-                        ? 'Full GPU Fit'
-                        : fitResult.status === 'conditional'
-                          ? 'Partial Offload'
-                          : 'CPU Only'}
-                    </span>
-                  )}
-                </div>
-
-                {/* Stacked VRAM Breakdown Bar (Weights + KV Cache + 512MB Headroom) */}
-                <div>
-                  <div className="mb-1.5 flex items-center justify-between text-xs">
-                    <span className="text-slate-300">
-                      Total Footprint + Headroom:{' '}
-                      <strong className="text-white">{formatBytes(totalEstimatedVram)}</strong>
-                    </span>
-                    <span className="text-slate-400">
-                      Live Free VRAM: <strong className="text-slate-200">{formatBytes(totalFreeVram)}</strong>
-                    </span>
-                  </div>
-
-                  <div
-                    className="flex h-3 w-full overflow-hidden rounded-full bg-white/[0.08]"
-                    role="img"
-                    aria-label={`VRAM breakdown: Weights ${formatBytes(weightBytes)}, KV Cache ${formatBytes(kvCacheBytes)}, Safe Headroom ${safeHeadroomMb} MB`}
-                  >
-                    <div
-                      className="h-full bg-[#0078d4] transition-all duration-300"
-                      style={{ width: `${weightBarPct}%` }}
-                      title={`Weights: ${formatBytes(weightBytes)}`}
-                    />
-                    <div
-                      className="h-full bg-[#a855f7] transition-all duration-300"
-                      style={{ width: `${kvBarPct}%` }}
-                      title={`KV Cache: ${formatBytes(kvCacheBytes)}`}
-                    />
-                    <div
-                      className="h-full bg-amber-500/80 transition-all duration-300"
-                      style={{ width: `${headroomBarPct}%` }}
-                      title={`Safe VRAM Headroom: ${safeHeadroomMb} MB`}
-                    />
-                  </div>
-
-                  <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-300">
-                    <div className="flex flex-wrap items-center gap-4">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-[#0078d4]" aria-hidden={true} />
-                        Weights: <strong>{formatBytes(weightBytes)}</strong>
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-[#a855f7]" aria-hidden={true} />
-                        KV Cache: <strong>{formatBytes(kvCacheBytes)}</strong>
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-amber-500/80" aria-hidden={true} />
-                        Headroom: <strong>{safeHeadroomMb} MB</strong>
-                      </span>
-                    </div>
-
-                    {fitResult && (
-                      <span className="inline-flex items-center gap-1.5 text-slate-200">
-                        <Layers className="h-3.5 w-3.5 text-[#38bdf8]" aria-hidden={true} />
-                        GPU Offload:{' '}
-                        <strong>
-                          {fitResult.maxOffloadLayers}/{fitResult.totalLayers} layers
-                        </strong>
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Context Window Slider Clamped to Architectural Maximum */}
-                <div className="border-t border-white/[0.06] pt-3">
-                  <div className="mb-1.5 flex items-center justify-between text-xs">
-                    <label htmlFor="context-slider" className="font-medium text-slate-200">
-                      Context Window (clamped to {formatContextLength(maxContextTokens)} max)
-                    </label>
-                    <span className="rounded bg-white/[0.06] px-2 py-0.5 font-mono text-xs text-[#7dd3fc]">
-                      {contextTokens.toLocaleString()} tokens ({formatContextLength(contextTokens)})
-                    </span>
-                  </div>
-                  <input
-                    id="context-slider"
-                    type="range"
-                    min={2048}
-                    max={maxContextTokens}
-                    step={2048}
-                    value={Math.min(contextTokens, maxContextTokens)}
-                    onChange={(e) => setContextTokens(Number(e.target.value))}
-                    className="fluent-slider w-full"
-                  />
-                  <div className="mt-1 flex justify-between text-[10px] text-slate-500">
-                    <span>2K</span>
-                    <span>{formatContextLength(Math.round(maxContextTokens / 4))}</span>
-                    <span>{formatContextLength(Math.round(maxContextTokens / 2))}</span>
-                    <span>{formatContextLength(maxContextTokens)} (Model Max)</span>
-                  </div>
-                </div>
-              </section>
-
-              {/* 3. Purpose Preset Editor + Restore Defaults */}
-              <section aria-labelledby="preset-heading" className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <h3 id="preset-heading" className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-                      Purpose Preset
-                    </h3>
-                    <span className="rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-400">
-                      {hasAuthorDefaults ? 'Author generation_config.json' : 'Preset Baseline'}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleRestoreDefaults}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white"
-                  >
-                    <RotateCcw className="h-3 w-3 text-[#38bdf8]" aria-hidden={true} />
-                    Restore Defaults
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="tablist" aria-label="Inference purpose presets">
-                  {PRESET_TABS.map((tab) => {
-                    const isSelected = presetIntent === tab.intent;
-                    const isReasoning = tab.intent === 'reasoning';
-                    return (
-                      <button
-                        key={tab.intent}
-                        type="button"
-                        role="tab"
-                        aria-selected={isSelected}
-                        onClick={() => handleSelectPresetTab(tab.intent)}
-                        className={`rounded-lg border px-2.5 py-2 text-center text-xs font-medium transition-all ${
-                          isSelected
-                            ? isReasoning
-                              ? 'border-purple-400/60 bg-purple-500/20 text-purple-200'
-                              : 'border-[#38bdf8]/60 bg-[#0078d4]/25 text-[#7dd3fc]'
-                            : 'border-white/[0.08] bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-white'
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Editable Preset Parameters + Think Budget Slider */}
-                <div
-                  className={`rounded-xl border p-3.5 text-xs space-y-3 ${
-                    presetIntent === 'reasoning'
-                      ? 'border-purple-400/30 bg-purple-500/[0.08]'
-                      : 'border-white/[0.08] bg-white/[0.03]'
-                  }`}
-                >
-                  <p className="text-slate-300">{activePreset.description}</p>
-                  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
-                    <label className="space-y-1">
-                      <span className="block text-[11px] text-slate-400">Temperature</span>
-                      <input
-                        type="number"
-                        step={0.05}
-                        min={0}
-                        max={2}
-                        value={presetParams.temperature}
-                        onChange={(e) =>
-                          setPresetParams((p) => ({ ...p, temperature: Number(e.target.value) }))
-                        }
-                        className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] text-slate-400">top_p</span>
-                      <input
-                        type="number"
-                        step={0.01}
-                        min={0}
-                        max={1}
-                        value={presetParams.topP}
-                        onChange={(e) =>
-                          setPresetParams((p) => ({ ...p, topP: Number(e.target.value) }))
-                        }
-                        className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] text-slate-400">top_k</span>
-                      <input
-                        type="number"
-                        step={1}
-                        min={0}
-                        max={200}
-                        value={presetParams.topK}
-                        onChange={(e) =>
-                          setPresetParams((p) => ({ ...p, topK: Number(e.target.value) }))
-                        }
-                        className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] text-slate-400">min_p</span>
-                      <input
-                        type="number"
-                        step={0.01}
-                        min={0}
-                        max={1}
-                        value={presetParams.minP}
-                        onChange={(e) =>
-                          setPresetParams((p) => ({ ...p, minP: Number(e.target.value) }))
-                        }
-                        className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] text-slate-400">repeat_penalty</span>
-                      <input
-                        type="number"
-                        step={0.05}
-                        min={0.5}
-                        max={2}
-                        value={presetParams.repeatPenalty}
-                        onChange={(e) =>
-                          setPresetParams((p) => ({ ...p, repeatPenalty: Number(e.target.value) }))
-                        }
-                        className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
-                      />
-                    </label>
-                  </div>
-
-                  {presetIntent === 'reasoning' && (
-                    <div className="border-t border-purple-400/20 pt-3">
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <label htmlFor="think-budget-slider" className="font-medium text-purple-200">
-                          Think-Budget Tokens
-                        </label>
-                        <span className="rounded bg-purple-500/20 px-2 py-0.5 font-mono text-xs text-purple-200">
-                          {thinkBudgetTokens.toLocaleString()} tokens
-                        </span>
-                      </div>
-                      <input
-                        id="think-budget-slider"
-                        type="range"
-                        min={1024}
-                        max={32768}
-                        step={1024}
-                        value={thinkBudgetTokens}
-                        onChange={(e) => setThinkBudgetTokens(Number(e.target.value))}
-                        className="fluent-slider fluent-slider-purple w-full"
-                      />
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              {/* 4. Runtime Selector */}
-              <section aria-labelledby="runtime-heading" className="space-y-2.5">
-                <h3 id="runtime-heading" className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-                  Target Local Runtime
-                </h3>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Target runtime">
-                  {RUNTIME_ORDER.map((rt) => {
-                    const detected = runtimes.find((r) => r.runtimeId === rt.id);
-                    const isOnline = detected?.isHealthy ?? false;
-                    const isSelected = selectedRuntime === rt.id;
-
-                    return (
-                      <button
-                        key={rt.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={isSelected}
-                        onClick={() => setSelectedRuntime(rt.id)}
-                        className={`flex flex-col justify-between rounded-lg border p-2.5 text-left transition-all ${
-                          isSelected
-                            ? 'border-[#38bdf8]/60 bg-[#0078d4]/20'
-                            : 'border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.06]'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-white">{rt.label}</span>
-                          <span
-                            className={`h-2 w-2 rounded-full ${
-                              isOnline ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]' : 'bg-slate-600'
-                            }`}
-                            title={isOnline ? 'Detected & Online' : 'Not Detected'}
-                          />
-                        </div>
-                        <span className="mt-1 text-[11px] text-slate-400">
-                          {isOnline ? detected?.version || 'Online' : 'Not detected'}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-
-              {/* 5. Deployment Progress & Live Smoke Test Results */}
-              {(isDeploying || deployProgress || deployDone || deployError) && (
-                <section
-                  aria-live="polite"
-                  className="fluent-card rounded-xl p-4 space-y-2.5"
-                >
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-200">
-                      {deployDone
-                        ? `Deployed to ${selectedRuntime} successfully`
-                        : deployError
-                          ? deployError
-                          : deployProgress?.stepDescription || 'Preparing deployment...'}
-                    </span>
-                    {deployProgress && (
-                      <span className="font-mono text-[#7dd3fc]">{deployProgress.percentComplete}%</span>
-                    )}
-                  </div>
-
-                  <div
-                    role="progressbar"
-                    aria-valuenow={deployProgress?.percentComplete ?? 0}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    className="h-2 w-full overflow-hidden rounded-full bg-white/[0.08]"
-                  >
-                    <div
-                      className={`h-full transition-all duration-150 ${
-                        deployDone
-                          ? 'bg-emerald-400'
-                          : deployError
-                            ? 'bg-rose-500'
-                            : 'bg-gradient-to-r from-[#0078d4] to-[#38bdf8]'
-                      }`}
-                      style={{ width: `${deployDone ? 100 : deployProgress?.percentComplete ?? 0}%` }}
-                    />
-                  </div>
-                </section>
-              )}
-
-              {smokeResult && (
-                <section
-                  aria-live="polite"
-                  className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] p-4 space-y-2.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
-                      <Zap className="h-4 w-4" aria-hidden={true} />
-                      Smoke Test Passed
-                    </span>
-                    <div className="flex items-center gap-3 font-mono text-xs text-slate-200">
-                      <span>
-                        TTFT: <strong className="text-emerald-300">{smokeResult.latencyToFirstTokenMs} ms</strong>
-                      </span>
-                      <span>
-                        Speed: <strong className="text-[#7dd3fc]">{smokeResult.tokensPerSecond.toFixed(1)} tok/s</strong>
-                      </span>
-                    </div>
-                  </div>
-                  {smokeResult.rawOutputSample && (
-                    <div className="flex items-start gap-2 rounded-lg bg-[#090d16]/70 p-2.5 font-mono text-[11px] text-slate-300">
-                      <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden={true} />
-                      <span>{smokeResult.rawOutputSample}</span>
-                    </div>
-                  )}
-                </section>
-              )}
-            </div>
-
-            {/* Sticky Footer: Disk Space Preview, One-Click Deploy & Smoke Test */}
-            <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.08] bg-[#090d16]/95 px-6 py-4">
-              <div className="flex items-center gap-2 text-xs text-slate-300">
-                <HardDrive className="h-4 w-4 text-slate-400" aria-hidden={true} />
-                <span>
-                  Disk required: <strong className="text-white">{formatBytes(selectedQuant.sizeBytes)}</strong>
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={handleSmokeTest}
-                  disabled={isTesting || isDeploying}
-                  className="inline-flex items-center gap-2 rounded-lg border border-white/[0.12] bg-white/[0.05] px-3.5 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white disabled:opacity-50"
-                >
-                  {isTesting ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-[#38bdf8]" aria-hidden={true} />
-                  ) : (
-                    <Play className="h-3.5 w-3.5 text-[#38bdf8]" aria-hidden={true} />
-                  )}
-                  {isTesting ? 'Testing...' : 'Live Smoke Test'}
-                </button>
-
-                {isDeploying ? (
-                  <button
-                    type="button"
-                    onClick={handleCancelDeploy}
-                    className="inline-flex items-center gap-2 rounded-lg border border-rose-500/40 bg-rose-500/20 px-4 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/30"
-                  >
-                    <StopCircle className="h-4 w-4" aria-hidden={true} />
-                    Cancel
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleDeploy}
-                    className="inline-flex items-center gap-2 rounded-lg bg-[#0078d4] px-4 py-2 text-xs font-semibold text-white shadow-md shadow-[#0078d4]/30 transition-colors hover:bg-[#1084d8]"
-                  >
-                    <Download className="h-4 w-4" aria-hidden={true} />
-                    {deployDone ? 'Redeploy Model' : 'One-Click Deploy'}
-                  </button>
-                )}
-              </div>
-            </footer>
-          </>
-        ) : (
-          /* Tab Panel 2: Model Card & README */
-          <div
-            id="panel-readme"
-            role="tabpanel"
-            aria-labelledby="tab-readme"
-            className="flex flex-1 flex-col overflow-hidden"
+        {activeTab === 'webpage' && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('deploy')}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[#0078d4] px-3 py-1 text-xs font-semibold text-white hover:bg-[#1084d8] shadow-sm shadow-[#0078d4]/30"
           >
-            <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02] px-6 py-3">
-              <span className="truncate font-mono text-xs text-slate-400">
-                huggingface.co/{model.id}
-              </span>
+            <Download className="h-3 w-3" />
+            Deploy Model
+          </button>
+        )}
+      </div>
+
+      {/* Tab Panel 1: Live Hugging Face Webpage */}
+      {activeTab === 'webpage' && (
+        <div id="panel-webpage" role="tabpanel" aria-labelledby="tab-webpage" className="flex flex-1 flex-col overflow-hidden bg-white">
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-4 py-1.5 text-xs text-slate-700">
+            <div className="flex items-center gap-2 font-mono text-[11px] truncate">
+              <Globe className="h-3.5 w-3.5 text-[#0078d4] shrink-0" />
+              <span className="truncate">https://huggingface.co/{model.id}</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (webviewRef.current) {
+                    try { webviewRef.current.reload(); } catch {}
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
+              >
+                <RotateCw className="h-3 w-3" />
+                Reload
+              </button>
               <button
                 type="button"
                 onClick={handleOpenInBrowser}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[#38bdf8]/35 bg-[#0078d4]/20 px-3 py-1.5 text-xs font-medium text-[#7dd3fc] transition-colors hover:bg-[#0078d4]/35"
+                className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
               >
-                <ExternalLink className="h-3.5 w-3.5" aria-hidden={true} />
-                Open in Browser
+                <ExternalLink className="h-3 w-3" />
+                Open in Chrome/Edge
               </button>
             </div>
+          </div>
+          <webview
+            ref={webviewRef}
+            src={`https://huggingface.co/${model.id}`}
+            className="flex-1 w-full h-full border-0 bg-white"
+            allowpopups={true}
+          />
+        </div>
+      )}
 
-            <div className="flex-1 overflow-y-auto px-6 py-5">
-              {isLoadingReadme ? (
-                <div className="flex items-center gap-2.5 text-xs text-slate-400" aria-busy="true">
-                  <Loader2 className="h-4 w-4 animate-spin text-[#38bdf8]" aria-hidden={true} />
-                  Fetching README.md from Hugging Face Hub...
+      {/* Tab Panel 2: Deployment & Sizing */}
+      {activeTab === 'deploy' && (
+        <>
+          <div
+            id="panel-deploy"
+            role="tabpanel"
+            aria-labelledby="tab-deploy"
+            className="flex-1 space-y-6 overflow-y-auto px-6 py-5"
+          >
+            {/* 1. GGUF Quantization Selector */}
+            <section aria-labelledby="quant-heading">
+              <div className="mb-2.5 flex items-center justify-between">
+                <h3 id="quant-heading" className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                  Quantization Artifact
+                </h3>
+                <span className="text-xs text-slate-400">{selectedQuant.filename}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Quantization format">
+                {quantOptions.map((q) => {
+                  const selected = q.id === selectedQuant.id;
+                  return (
+                    <button
+                      key={q.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => setSelectedQuantId(q.id)}
+                      className={`rounded-lg border p-2.5 text-left transition-all ${
+                        selected
+                          ? 'border-[#38bdf8]/60 bg-[#0078d4]/20 shadow-[0_0_0_1px_rgba(56,189,248,0.25)]'
+                          : 'border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-white">{q.label}</span>
+                        <span className="text-xs font-medium text-[#7dd3fc]">
+                          {formatBytes(q.sizeBytes)}
+                        </span>
+                      </div>
+                      <div className="mt-1 truncate text-[11px] text-slate-400">{q.qualityNote}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* 2. Real-time Hardware Sizing Meter */}
+            <section
+              aria-labelledby="sizing-heading"
+              className="fluent-card rounded-xl p-4 space-y-4"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3
+                  id="sizing-heading"
+                  className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-200"
+                >
+                  <Cpu className="h-4 w-4 text-[#38bdf8]" aria-hidden={true} />
+                  Real-Time Hardware Sizing ({activeGpu?.name || 'GPU'})
+                </h3>
+
+                {fitResult && (
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-0.5 text-xs font-medium ${
+                      fitResult.status === 'supported'
+                        ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
+                        : fitResult.status === 'conditional'
+                          ? 'border-amber-500/35 bg-amber-500/15 text-amber-300'
+                          : 'border-rose-500/35 bg-rose-500/15 text-rose-300'
+                    }`}
+                  >
+                    {fitResult.status === 'supported' ? (
+                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden={true} />
+                    ) : (
+                      <AlertTriangle className="h-3.5 w-3.5" aria-hidden={true} />
+                    )}
+                    {fitResult.status === 'supported'
+                      ? 'Full GPU Fit'
+                      : fitResult.status === 'conditional'
+                        ? 'Partial GPU Offload'
+                        : 'Cannot Run in VRAM'}
+                  </span>
+                )}
+              </div>
+
+              {/* Stacked Memory Allocation Bar */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-mono">
+                  <span className="text-slate-300">
+                    Total Footprint + Headroom:{' '}
+                    <strong className="text-white">{formatBytes(totalEstimatedVram)}</strong>
+                  </span>
+                  <span className="text-slate-400">
+                    Live Free VRAM:{' '}
+                    <strong className="text-[#38bdf8]">{formatBytes(totalFreeVram)}</strong>
+                  </span>
                 </div>
+
+                <div
+                  role="img"
+                  aria-label={`VRAM allocation: Weights ${formatBytes(weightBytes)}, KV Cache ${formatBytes(kvCacheBytes)}, Headroom ${formatBytes(headroomBytes)} out of ${formatBytes(totalFreeVram)} free`}
+                  className="relative h-3 w-full overflow-hidden rounded-full bg-white/[0.08]"
+                >
+                  <div
+                    className="absolute inset-y-0 left-0 bg-[#0078d4] transition-all duration-200"
+                    style={{ width: `${weightBarPct}%` }}
+                    title={`Model Weights: ${formatBytes(weightBytes)}`}
+                  />
+                  <div
+                    className="absolute inset-y-0 bg-[#a855f7] transition-all duration-200"
+                    style={{ left: `${weightBarPct}%`, width: `${kvBarPct}%` }}
+                    title={`KV Cache: ${formatBytes(kvCacheBytes)}`}
+                  />
+                  <div
+                    className="absolute inset-y-0 bg-amber-500 transition-all duration-200"
+                    style={{ left: `${weightBarPct + kvBarPct}%`, width: `${headroomBarPct}%` }}
+                    title={`Safe Headroom: ${formatBytes(headroomBytes)}`}
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
+                  <div className="flex items-center gap-4">
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#0078d4]" aria-hidden={true} />
+                      Weights: {formatBytes(weightBytes)}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#a855f7]" aria-hidden={true} />
+                      KV Cache: {formatBytes(kvCacheBytes)}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-amber-500" aria-hidden={true} />
+                      Headroom: {formatBytes(headroomBytes)}
+                    </span>
+                  </div>
+
+                  {fitResult && (
+                    <span className="flex items-center gap-1 text-slate-300 font-mono">
+                      <Layers className="h-3.5 w-3.5 text-[#38bdf8]" aria-hidden={true} />
+                      GPU Offload:{' '}
+                      <strong>
+                        {fitResult.maxOffloadLayers}/{fitResult.totalLayers} layers
+                      </strong>
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Context Window Slider in 16K Discrete Divisions with Notches & Aligned Labels */}
+              <div className="border-t border-white/[0.06] pt-3">
+                <div className="mb-1.5 flex items-center justify-between text-xs">
+                  <label htmlFor="context-slider" className="font-medium text-slate-200">
+                    Context Window (16K divisions &middot; clamped to {formatContextLength(maxContextTokens)} max)
+                  </label>
+                  <span className="rounded bg-white/[0.06] px-2 py-0.5 font-mono text-xs text-[#7dd3fc]">
+                    {contextTokens.toLocaleString()} tokens ({formatContextLength(contextTokens)})
+                  </span>
+                </div>
+
+                {/* Notched Slider Bar */}
+                <div className="relative my-3 w-full">
+                  <div className="h-2 w-full rounded-full bg-white/[0.08]" />
+                  <div
+                    className="absolute top-0 left-0 h-2 rounded-full bg-gradient-to-r from-[#0078d4] to-[#38bdf8] transition-all"
+                    style={{
+                      width: `${discreteContextSteps.length > 1 ? (currentStepIndex / (discreteContextSteps.length - 1)) * 100 : 100}%`,
+                    }}
+                  />
+
+                  {/* Circular Notches along the track */}
+                  {discreteContextSteps.map((step, idx) => {
+                    const pct = discreteContextSteps.length > 1 ? (idx / (discreteContextSteps.length - 1)) * 100 : 0;
+                    const isReached = idx <= currentStepIndex;
+                    const isCurrent = idx === currentStepIndex;
+                    return (
+                      <span
+                        key={step}
+                        className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full border transition-all ${
+                          isCurrent
+                            ? 'h-3.5 w-3.5 border-white bg-[#38bdf8] shadow-[0_0_8px_rgba(56,189,248,0.8)] z-10'
+                            : isReached
+                              ? 'h-2 w-2 border-[#38bdf8] bg-[#0078d4]'
+                              : 'h-2 w-2 border-white/20 bg-[#090d16]'
+                        }`}
+                        style={{ left: `${pct}%` }}
+                        title={`${formatContextLength(step)} (${step.toLocaleString()} tokens)`}
+                      />
+                    );
+                  })}
+
+                  <input
+                    id="context-slider"
+                    type="range"
+                    min={0}
+                    max={discreteContextSteps.length - 1}
+                    step={1}
+                    value={currentStepIndex}
+                    onChange={(e) => setContextTokens(discreteContextSteps[Number(e.target.value)])}
+                    className="absolute inset-0 h-full w-full opacity-0 cursor-pointer z-20"
+                  />
+                </div>
+
+                {/* Aligned Labels Underneath Each Notch */}
+                <div className="relative mt-2 h-4 w-full text-[10px] text-slate-400 font-mono">
+                  {discreteContextSteps.map((step, idx) => {
+                    const pct = discreteContextSteps.length > 1 ? (idx / (discreteContextSteps.length - 1)) * 100 : 0;
+                    const isSelected = idx === currentStepIndex;
+                    return (
+                      <span
+                        key={step}
+                        className={`absolute -translate-x-1/2 transition-colors ${
+                          isSelected ? 'text-[#7dd3fc] font-bold' : 'text-slate-500'
+                        }`}
+                        style={{ left: `${pct}%` }}
+                      >
+                        {formatContextLength(step)}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+
+            {/* 3. Purpose Preset Editor + Restore Defaults */}
+            <section aria-labelledby="preset-heading" className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <h3 id="preset-heading" className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                    Purpose Preset
+                  </h3>
+                  <span className="rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-400">
+                    {hasAuthorDefaults ? 'Author generation_config.json' : 'Preset Baseline'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRestoreDefaults}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white"
+                >
+                  <RotateCcw className="h-3 w-3 text-[#38bdf8]" aria-hidden={true} />
+                  Restore Defaults
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="tablist" aria-label="Inference purpose presets">
+                {PRESET_TABS.map((tab) => {
+                  const isSelected = presetIntent === tab.intent;
+                  const isReasoning = tab.intent === 'reasoning';
+                  return (
+                    <button
+                      key={tab.intent}
+                      type="button"
+                      role="tab"
+                      aria-selected={isSelected}
+                      onClick={() => handleSelectPresetTab(tab.intent)}
+                      className={`rounded-lg border px-2.5 py-2 text-center text-xs font-medium transition-all ${
+                        isSelected
+                          ? isReasoning
+                            ? 'border-purple-400/60 bg-purple-500/20 text-purple-200'
+                            : 'border-[#38bdf8]/60 bg-[#0078d4]/25 text-[#7dd3fc]'
+                          : 'border-white/[0.08] bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-white'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Editable Preset Parameters + Think Budget Slider */}
+              <div
+                className={`rounded-xl border p-3.5 text-xs space-y-3 ${
+                  presetIntent === 'reasoning'
+                    ? 'border-purple-400/30 bg-purple-500/[0.08]'
+                    : 'border-white/[0.08] bg-white/[0.03]'
+                }`}
+              >
+                <p className="text-slate-300">{activePreset.description}</p>
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+                  <label className="space-y-1">
+                    <span className="block text-[11px] text-slate-400">Temperature</span>
+                    <input
+                      type="number"
+                      step={0.05}
+                      min={0}
+                      max={2}
+                      value={presetParams.temperature}
+                      onChange={(e) =>
+                        setPresetParams((p) => ({ ...p, temperature: Number(e.target.value) }))
+                      }
+                      className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="block text-[11px] text-slate-400">top_p</span>
+                    <input
+                      type="number"
+                      step={0.01}
+                      min={0}
+                      max={1}
+                      value={presetParams.topP}
+                      onChange={(e) =>
+                        setPresetParams((p) => ({ ...p, topP: Number(e.target.value) }))
+                      }
+                      className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="block text-[11px] text-slate-400">top_k</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={presetParams.topK}
+                      onChange={(e) =>
+                        setPresetParams((p) => ({ ...p, topK: Number(e.target.value) }))
+                      }
+                      className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="block text-[11px] text-slate-400">min_p</span>
+                    <input
+                      type="number"
+                      step={0.01}
+                      min={0}
+                      max={1}
+                      value={presetParams.minP}
+                      onChange={(e) =>
+                        setPresetParams((p) => ({ ...p, minP: Number(e.target.value) }))
+                      }
+                      className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="block text-[11px] text-slate-400">repeat_penalty</span>
+                    <input
+                      type="number"
+                      step={0.05}
+                      min={0.5}
+                      max={2}
+                      value={presetParams.repeatPenalty}
+                      onChange={(e) =>
+                        setPresetParams((p) => ({ ...p, repeatPenalty: Number(e.target.value) }))
+                      }
+                      className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
+                    />
+                  </label>
+                </div>
+
+                {presetIntent === 'reasoning' && (
+                  <div className="border-t border-purple-400/20 pt-3">
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <label htmlFor="think-budget-slider" className="font-medium text-purple-200">
+                        Think-Budget Tokens
+                      </label>
+                      <span className="rounded bg-purple-500/20 px-2 py-0.5 font-mono text-xs text-purple-200">
+                        {thinkBudgetTokens.toLocaleString()} tokens
+                      </span>
+                    </div>
+                    <input
+                      id="think-budget-slider"
+                      type="range"
+                      min={1024}
+                      max={32768}
+                      step={1024}
+                      value={thinkBudgetTokens}
+                      onChange={(e) => setThinkBudgetTokens(Number(e.target.value))}
+                      className="fluent-slider fluent-slider-purple w-full"
+                    />
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* 4. Runtime Selector */}
+            <section aria-labelledby="runtime-heading" className="space-y-2.5">
+              <h3 id="runtime-heading" className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                Target Local Runtime
+              </h3>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Target runtime">
+                {RUNTIME_ORDER.map((rt) => {
+                  const detected = runtimes.find((r) => r.runtimeId === rt.id);
+                  const isOnline = detected?.isHealthy ?? false;
+                  const isSelected = selectedRuntime === rt.id;
+
+                  return (
+                    <button
+                      key={rt.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      onClick={() => setSelectedRuntime(rt.id)}
+                      className={`flex flex-col justify-between rounded-lg border p-2.5 text-left transition-all ${
+                        isSelected
+                          ? 'border-[#38bdf8]/60 bg-[#0078d4]/20'
+                          : 'border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-white">{rt.label}</span>
+                        <span
+                          className={`h-2 w-2 rounded-full ${
+                            isOnline ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]' : 'bg-slate-600'
+                          }`}
+                          title={isOnline ? 'Detected & Online' : 'Not Detected'}
+                        />
+                      </div>
+                      <span className="mt-1 text-[10px] text-slate-400">
+                        {isOnline ? 'Active' : 'Offline'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* 5. Deployment Progress & Live Smoke Test Results */}
+            {(isDeploying || deployProgress || deployDone || deployError) && (
+              <section
+                aria-live="polite"
+                className="fluent-card rounded-xl p-4 space-y-2.5"
+              >
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-slate-200">
+                    {deployDone
+                      ? `Deployed to ${selectedRuntime} successfully`
+                      : deployError
+                        ? deployError
+                        : deployProgress?.stepDescription || 'Preparing deployment...'}
+                  </span>
+                  {deployProgress && (
+                    <span className="font-mono text-[#7dd3fc]">{deployProgress.percentComplete}%</span>
+                  )}
+                </div>
+
+                <div
+                  role="progressbar"
+                  aria-valuenow={deployProgress?.percentComplete ?? 0}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  className="h-2 w-full overflow-hidden rounded-full bg-white/[0.08]"
+                >
+                  <div
+                    className={`h-full transition-all duration-150 ${
+                      deployDone
+                        ? 'bg-emerald-400'
+                        : deployError
+                          ? 'bg-rose-500'
+                          : 'bg-gradient-to-r from-[#0078d4] to-[#38bdf8]'
+                    }`}
+                    style={{ width: `${deployDone ? 100 : deployProgress?.percentComplete ?? 0}%` }}
+                  />
+                </div>
+              </section>
+            )}
+
+            {smokeResult && (
+              <section
+                aria-live="polite"
+                className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] p-4 space-y-2.5"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
+                    <Zap className="h-4 w-4" aria-hidden={true} />
+                    Smoke Test Passed
+                  </span>
+                  <div className="flex items-center gap-3 font-mono text-xs text-slate-200">
+                    <span>
+                      TTFT: <strong className="text-emerald-300">{smokeResult.latencyToFirstTokenMs} ms</strong>
+                    </span>
+                    <span>
+                      Speed: <strong className="text-[#7dd3fc]">{smokeResult.tokensPerSecond.toFixed(1)} tok/s</strong>
+                    </span>
+                  </div>
+                </div>
+                {smokeResult.rawOutputSample && (
+                  <div className="flex items-start gap-2 rounded-lg bg-[#090d16]/70 p-2.5 font-mono text-[11px] text-slate-300">
+                    <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden={true} />
+                    <span>{smokeResult.rawOutputSample}</span>
+                  </div>
+                )}
+              </section>
+            )}
+          </div>
+
+          {/* Sticky Footer: Disk Space Preview, One-Click Deploy & Smoke Test */}
+          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.08] bg-[#090d16]/95 px-6 py-4">
+            <div className="flex items-center gap-2 text-xs text-slate-300">
+              <HardDrive className="h-4 w-4 text-slate-400" aria-hidden={true} />
+              <span>
+                Disk required: <strong className="text-white">{formatBytes(selectedQuant.sizeBytes)}</strong>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleSmokeTest}
+                disabled={isTesting || isDeploying}
+                className="inline-flex items-center gap-2 rounded-lg border border-white/[0.12] bg-white/[0.05] px-3.5 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white disabled:opacity-50"
+              >
+                {isTesting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#38bdf8]" aria-hidden={true} />
+                ) : (
+                  <Play className="h-3.5 w-3.5 text-[#38bdf8]" aria-hidden={true} />
+                )}
+                {isTesting ? 'Testing...' : 'Live Smoke Test'}
+              </button>
+
+              {isDeploying ? (
+                <button
+                  type="button"
+                  onClick={handleCancelDeploy}
+                  className="inline-flex items-center gap-2 rounded-lg border border-rose-500/40 bg-rose-500/20 px-4 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/30"
+                >
+                  <StopCircle className="h-4 w-4" aria-hidden={true} />
+                  Cancel
+                </button>
               ) : (
-                <SanitizedMarkdownView markdown={readmeMarkdown} />
+                <button
+                  type="button"
+                  onClick={handleDeploy}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#0078d4] px-4 py-2 text-xs font-semibold text-white shadow-md shadow-[#0078d4]/30 transition-colors hover:bg-[#1084d8]"
+                >
+                  <Download className="h-4 w-4" aria-hidden={true} />
+                  {deployDone ? 'Redeploy Model' : 'One-Click Deploy'}
+                </button>
               )}
             </div>
+          </footer>
+        </>
+      )}
+
+      {/* Tab Panel 3: Model Card & README */}
+      {activeTab === 'readme' && (
+        <div
+          id="panel-readme"
+          role="tabpanel"
+          aria-labelledby="tab-readme"
+          className="flex flex-1 flex-col overflow-hidden"
+        >
+          <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02] px-6 py-3">
+            <span className="truncate font-mono text-xs text-slate-400">
+              huggingface.co/{model.id}
+            </span>
+            <button
+              type="button"
+              onClick={handleOpenInBrowser}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#38bdf8]/35 bg-[#0078d4]/20 px-3 py-1.5 text-xs font-medium text-[#7dd3fc] transition-colors hover:bg-[#0078d4]/35"
+            >
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden={true} />
+              Open in External Browser
+            </button>
           </div>
-        )}
-      </aside>
-    </>
+
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            {isLoadingReadme ? (
+              <div className="flex items-center gap-2.5 text-xs text-slate-400" aria-busy="true">
+                <Loader2 className="h-4 w-4 animate-spin text-[#38bdf8]" aria-hidden={true} />
+                Fetching README.md from Hugging Face Hub...
+              </div>
+            ) : (
+              <SanitizedMarkdownView markdown={readmeMarkdown} />
+            )}
+          </div>
+        </div>
+      )}
+    </aside>
   );
 };

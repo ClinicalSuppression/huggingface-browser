@@ -11,13 +11,13 @@ describe('Credential Vault Integration', () => {
 
     const retrieved = await CredentialVault.getHfToken(testAccount);
     expect(retrieved).toBe(dummyToken);
-  });
+  }, 15000);
 
   it('removes token successfully', async () => {
     await CredentialVault.removeHfToken(testAccount);
     const after = await CredentialVault.getHfToken(testAccount);
     expect(after).toBeNull();
-  });
+  }, 15000);
 
   it('handles invalid token validation rejection safely without exceptions', async () => {
     const result = await CredentialVault.validateHfToken('hf_invalid_token_test');

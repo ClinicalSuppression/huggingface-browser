@@ -8,6 +8,14 @@ const execAsync = promisify(exec);
 const VAULT_RESOURCE = 'HuggingFaceModelBrowser';
 const MACHINE_SECRET = os.hostname() + (process.env.COMPUTERNAME || '') + os.platform() + os.arch();
 
+async function runPowerShell(script: string, timeoutMs: number = 3000): Promise<string> {
+  const b64 = Buffer.from(script, 'utf16le').toString('base64');
+  const { stdout } = await execAsync(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${b64}`, {
+    timeout: timeoutMs,
+  });
+  return stdout;
+}
+
 function encryptToken(token: string): string {
   const salt = crypto.randomBytes(16);
   const key = crypto.pbkdf2Sync(MACHINE_SECRET, salt, 100000, 32, 'sha256');
@@ -60,7 +68,7 @@ export class CredentialVault {
           $cred = New-Object Windows.Security.Credentials.PasswordCredential('${VAULT_RESOURCE}', '${accountName}', '${encryptedToken}')
           $vault.Add($cred)
         `;
-        await execAsync(`powershell.exe -NoProfile -Command "${psScript.replace(/\n/g, ' ')}"`);
+        await runPowerShell(psScript);
         this.memoryTokens.set(accountName, encryptedToken);
         return true;
       } catch (err) {
@@ -88,7 +96,7 @@ export class CredentialVault {
             Write-Output ""
           }
         `;
-        const { stdout } = await execAsync(`powershell.exe -NoProfile -Command "${psScript.replace(/\n/g, ' ')}"`);
+        const stdout = await runPowerShell(psScript);
         const val = stdout.trim();
         if (val) {
           storedValue = val;
@@ -117,7 +125,7 @@ export class CredentialVault {
             $vault.Remove($cred)
           } catch {}
         `;
-        await execAsync(`powershell.exe -NoProfile -Command "${psScript.replace(/\n/g, ' ')}"`);
+        await runPowerShell(psScript);
       } catch {}
     }
     this.memoryTokens.delete(accountName);

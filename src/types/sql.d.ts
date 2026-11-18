@@ -8,3 +8,13 @@ declare module 'sql.js' {
     Database: new (data?: ArrayLike<number> | Uint8Array | Buffer) => Database;
   }>;
 }
+
+declare namespace JSX {
+  interface IntrinsicElements {
+    webview: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+      src?: string;
+      allowpopups?: string | boolean;
+      webpreferences?: string;
+    };
+  }
+}
