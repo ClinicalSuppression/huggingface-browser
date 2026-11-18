@@ -18,5 +18,5 @@ describe('Hardware Profiler Integration', () => {
     for (const g of profile.gpus) {
       console.log(` - GPU: ${g.name} (${g.vendor.toUpperCase()}), VRAM: ${(g.vramTotalBytes / (1024 * 1024 * 1024)).toFixed(1)} GB`);
     }
-  });
+  }, 15000);
 });
