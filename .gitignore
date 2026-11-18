@@ -1,6 +1,10 @@
 node_modules/
 dist/
 dist-electron/
+dist-installer/
+dist-release/
+*.zip
+*.exe
 *.log
 .DS_Store
 Thumbs.db
