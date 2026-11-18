@@ -1,39 +1,81 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import https from 'https';
+import crypto from 'crypto';
+import os from 'os';
 
 const execAsync = promisify(exec);
 const VAULT_RESOURCE = 'HuggingFaceModelBrowser';
+const MACHINE_SECRET = os.hostname() + (process.env.COMPUTERNAME || '') + os.platform() + os.arch();
+
+function encryptToken(token: string): string {
+  const salt = crypto.randomBytes(16);
+  const key = crypto.pbkdf2Sync(MACHINE_SECRET, salt, 100000, 32, 'sha256');
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  let encrypted = cipher.update(token, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const tag = cipher.getAuthTag().toString('hex');
+  return `enc_v1:${salt.toString('hex')}:${iv.toString('hex')}:${tag}:${encrypted}`;
+}
+
+function decryptToken(storedValue: string): string {
+  if (!storedValue || !storedValue.startsWith('enc_v1:')) {
+    return storedValue; // fallback for plaintext or mock tokens in tests
+  }
+  try {
+    const parts = storedValue.split(':');
+    if (parts.length !== 5) return storedValue;
+    const [, saltHex, ivHex, tagHex, cipherHex] = parts;
+    const salt = Buffer.from(saltHex, 'hex');
+    const iv = Buffer.from(ivHex, 'hex');
+    const tag = Buffer.from(tagHex, 'hex');
+    const key = crypto.pbkdf2Sync(MACHINE_SECRET, salt, 100000, 32, 'sha256');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    let decrypted = decipher.update(cipherHex, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch {
+    return storedValue;
+  }
+}
 
 export class CredentialVault {
   /**
    * Saves a Hugging Face User Access Token into Windows Credential Manager
-   * using Windows.Security.Credentials.PasswordVault.
+   * or memory fallback using salted AES-256-GCM encryption.
    */
   public static async saveHfToken(token: string, accountName: string = 'default'): Promise<boolean> {
+    const encryptedToken = encryptToken(token);
     if (process.platform === 'win32') {
       try {
         const psScript = `
           Add-Type -AssemblyName System.Security
           $vault = New-Object Windows.Security.Credentials.PasswordVault
-          $cred = New-Object Windows.Security.Credentials.PasswordCredential('${VAULT_RESOURCE}', '${accountName}', '${token}')
+          try {
+            $existing = $vault.Retrieve('${VAULT_RESOURCE}', '${accountName}')
+            $vault.Remove($existing)
+          } catch {}
+          $cred = New-Object Windows.Security.Credentials.PasswordCredential('${VAULT_RESOURCE}', '${accountName}', '${encryptedToken}')
           $vault.Add($cred)
         `;
         await execAsync(`powershell.exe -NoProfile -Command "${psScript.replace(/\n/g, ' ')}"`);
+        this.memoryTokens.set(accountName, encryptedToken);
         return true;
       } catch (err) {
         console.error('Failed to save token to Windows PasswordVault, using fallback:', err);
       }
     }
-    // In-memory fallback
-    this.memoryTokens.set(accountName, token);
+    this.memoryTokens.set(accountName, encryptedToken);
     return true;
   }
 
   /**
-   * Retrieves the Hugging Face User Access Token from Windows Credential Manager.
+   * Retrieves and decrypts the Hugging Face User Access Token from Windows Credential Manager or memory.
    */
   public static async getHfToken(accountName: string = 'default'): Promise<string | null> {
+    let storedValue: string | null = null;
     if (process.platform === 'win32') {
       try {
         const psScript = `
@@ -47,19 +89,23 @@ export class CredentialVault {
           }
         `;
         const { stdout } = await execAsync(`powershell.exe -NoProfile -Command "${psScript.replace(/\n/g, ' ')}"`);
-        const token = stdout.trim();
-        if (token) {
-          return token;
+        const val = stdout.trim();
+        if (val) {
+          storedValue = val;
         }
       } catch {
         // Fall back to memory
       }
     }
-    return this.memoryTokens.get(accountName) || null;
+    if (!storedValue) {
+      storedValue = this.memoryTokens.get(accountName) || null;
+    }
+    if (!storedValue) return null;
+    return decryptToken(storedValue);
   }
 
   /**
-   * Deletes the Hugging Face User Access Token from Windows Credential Manager.
+   * Deletes the Hugging Face User Access Token from Windows Credential Manager and memory.
    */
   public static async removeHfToken(accountName: string = 'default'): Promise<boolean> {
     if (process.platform === 'win32') {

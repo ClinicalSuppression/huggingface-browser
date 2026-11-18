@@ -42,6 +42,51 @@ export class HuggingFaceClient {
   }
 
   /**
+   * Fetch model generation config (temperature, top_p, etc.)
+   */
+  public static async getModelGenerationConfig(
+    modelId: string,
+    token?: string
+  ): Promise<{ temperature?: number; top_p?: number; repetition_penalty?: number; top_k?: number } | null> {
+    try {
+      return await this.request<{ temperature?: number; top_p?: number; repetition_penalty?: number; top_k?: number }>(
+        `/${modelId}/raw/main/generation_config.json`,
+        token
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Fetch model README.md
+   */
+  public static async getModelReadme(modelId: string, token?: string): Promise<string | null> {
+    try {
+      return await this.requestText(`/${modelId}/raw/main/README.md`, token);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Fetch model architecture configuration (config.json)
+   */
+  public static async getModelArchitectureConfig(
+    modelId: string,
+    token?: string
+  ): Promise<{ max_position_embeddings?: number; context_length?: number; [key: string]: unknown } | null> {
+    try {
+      return await this.request<{ max_position_embeddings?: number; context_length?: number; [key: string]: unknown }>(
+        `/${modelId}/raw/main/config.json`,
+        token
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Safe artifact resolution for GGUF model files
    */
   public static resolveArtifacts(model: HfModelSearchResult) {
@@ -132,6 +177,45 @@ export class HuggingFaceClient {
             reject(new Error('Hugging Face API rate limit reached. Please try again later or add an access token.'));
           } else {
             reject(new Error(`Hugging Face API error (Status ${res.statusCode}): ${body.slice(0, 200)}`));
+          }
+        });
+      });
+
+      req.on('error', err => reject(err));
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Hugging Face API request timed out'));
+      });
+      req.end();
+    });
+  }
+
+  private static requestText(path: string, token?: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const headers: Record<string, string> = {
+        'User-Agent': 'HF-Model-Browser-Windows/1.0',
+        'Accept': 'text/plain, application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const options: https.RequestOptions = {
+        hostname: this.API_BASE,
+        path,
+        method: 'GET',
+        headers,
+        timeout: 10000,
+      };
+
+      const req = https.request(options, (res) => {
+        let body = '';
+        res.on('data', chunk => { body += chunk; });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(body);
+          } else {
+            reject(new Error(`Hugging Face API error (Status ${res.statusCode})`));
           }
         });
       });

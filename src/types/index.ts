@@ -184,3 +184,11 @@ export interface PurposePreset {
   readonly thinkBudgetTokens?: number;
   readonly description: string;
 }
+
+export interface LocalModelItem {
+  readonly path: string;
+  readonly filename: string;
+  readonly sizeBytes: number;
+  readonly quant?: string;
+  readonly source: 'huggingface' | 'ollama' | 'lm-studio' | 'custom';
+}

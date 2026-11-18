@@ -5,6 +5,7 @@ import {
   Server,
   Activity,
   KeyRound,
+  Settings,
   Cpu,
   ShieldCheck,
   Sparkles,
@@ -17,6 +18,7 @@ interface SidebarProps {
   activeTab: NavTabId;
   onSelectTab: (tab: NavTabId) => void;
   hardware: HardwareProfile | null;
+  activeGpuId?: string;
   runtimes: DetectedRuntime[];
   installedCount: number;
 }
@@ -32,13 +34,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onSelectTab,
   hardware,
+  activeGpuId,
   runtimes,
   installedCount,
 }) => {
   const healthyRuntimes = runtimes.filter((r) => r.isHealthy).length;
 
   const navItems: NavItemConfig[] = [
-    { id: 'discover', label: 'Discover', icon: Search },
+    { id: 'discover', label: 'Search HF', icon: Search },
     {
       id: 'installed',
       label: 'Installed Models',
@@ -47,15 +50,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'runtimes',
-      label: 'Runtimes Manager',
+      label: 'Runtime Manager',
       icon: Server,
       badge: healthyRuntimes > 0 ? `${healthyRuntimes}/${runtimes.length}` : undefined,
     },
     { id: 'hardware', label: 'Hardware Monitor', icon: Activity },
-    { id: 'settings', label: 'Settings & HF Vault', icon: KeyRound },
+    { id: 'vault', label: 'HF Access Token', icon: KeyRound },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  const primaryGpu = hardware?.gpus[0];
+  const primaryGpu =
+    (activeGpuId ? hardware?.gpus.find((g) => g.id === activeGpuId) : undefined) ||
+    hardware?.gpus[0];
   const vramUsed = primaryGpu ? Math.max(0, primaryGpu.vramTotalBytes - primaryGpu.vramFreeBytes) : 0;
   const vramPct =
     primaryGpu && primaryGpu.vramTotalBytes > 0
@@ -74,10 +80,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold tracking-tight text-slate-100">
-            HF Model Hub
+            HF Browser
           </div>
           <div className="truncate text-[11px] font-medium text-slate-400">
-            Local Inference Studio
+            Windows 11 Model Hub
           </div>
         </div>
       </div>

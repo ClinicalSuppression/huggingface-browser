@@ -9,10 +9,13 @@ import { InstalledModelsView } from './ui/components/InstalledModelsView';
 import { RuntimesView } from './ui/components/RuntimesView';
 import { HardwareView } from './ui/components/HardwareView';
 import { SettingsVaultView } from './ui/components/SettingsVaultView';
+import { GeneralSettingsView } from './ui/components/GeneralSettingsView';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<NavTabId>('discover');
   const [hardware, setHardware] = useState<HardwareProfile | null>(null);
+  const [activeGpuId, setActiveGpuId] = useState<string>('gpu-0');
+  const [safeHeadroomMb, setSafeHeadroomMb] = useState<number>(512);
   const [runtimes, setRuntimes] = useState<DetectedRuntime[]>([]);
   const [installedModels, setInstalledModels] = useState<InstalledModelItem[]>([]);
 
@@ -29,6 +32,9 @@ export function App() {
   const refreshHardware = useCallback(async () => {
     const hw = await bridgeService.getHardwareProfile();
     setHardware(hw);
+    if (hw.gpus.length > 0) {
+      setActiveGpuId(hw.gpus[0].id);
+    }
   }, []);
 
   const refreshRuntimes = useCallback(async () => {
@@ -39,6 +45,35 @@ export function App() {
   const refreshInstalled = useCallback(async () => {
     const list = await bridgeService.listInstalledModels();
     setInstalledModels(list);
+  }, []);
+
+  // Live VRAM Usage Polling (every 2.5s)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const live = await bridgeService.getLiveVramUsage(0);
+        setHardware((prev) => {
+          if (!prev || prev.gpus.length === 0) return prev;
+          const updatedGpus = prev.gpus.map((g, idx) => {
+            if (idx === 0) {
+              return {
+                ...g,
+                vramFreeBytes: live.freeBytes,
+              };
+            }
+            return g;
+          });
+          return {
+            ...prev,
+            gpus: updatedGpus,
+          };
+        });
+      } catch {
+        // Silent fallback
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
   }, []);
 
   // Initial bootstrap
@@ -115,6 +150,7 @@ export function App() {
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         hardware={hardware}
+        activeGpuId={activeGpuId}
         runtimes={runtimes}
         installedCount={installedModels.length}
       />
@@ -131,6 +167,8 @@ export function App() {
             models={models}
             isLoading={isLoadingModels}
             hardware={hardware}
+            activeGpuId={activeGpuId}
+            safeHeadroomMb={safeHeadroomMb}
             onSelectModel={setSelectedModel}
             searchInputRef={searchInputRef}
           />
@@ -152,12 +190,24 @@ export function App() {
           <HardwareView hardware={hardware} onRefresh={refreshHardware} />
         )}
 
-        {activeTab === 'settings' && <SettingsVaultView />}
+        {activeTab === 'vault' && <SettingsVaultView />}
+
+        {activeTab === 'settings' && (
+          <GeneralSettingsView
+            hardware={hardware}
+            activeGpuId={activeGpuId}
+            onSelectGpu={setActiveGpuId}
+            safeHeadroomMb={safeHeadroomMb}
+            onChangeSafeHeadroom={setSafeHeadroomMb}
+          />
+        )}
       </main>
 
       <ModelDetailDrawer
         model={selectedModel}
         hardware={hardware}
+        activeGpuId={activeGpuId}
+        safeHeadroomMb={safeHeadroomMb}
         runtimes={runtimes}
         onClose={() => setSelectedModel(null)}
         onDeploySuccess={handleDeploySuccess}

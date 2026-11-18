@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateWeightMemoryBytes, calculateKvCacheMemoryBytes, evaluateHardwareFit } from '../src/core/sizing';
+import { calculateWeightMemoryBytes, calculateKvCacheMemoryBytes, evaluateHardwareFit, calculateBestFitContext } from '../src/core/sizing';
 import { HardwareProfile } from '../src/types';
 
 describe('Sizing and VRAM Estimation Engine', () => {
@@ -86,5 +86,13 @@ describe('Sizing and VRAM Estimation Engine', () => {
 
     expect(result.status).toBe('unsupported');
     expect(result.fitsInVram).toBe(false);
+  });
+
+  it('calculates best fit context correctly with standard step snapping', () => {
+    const freeVram = 14.5 * 1024 * 1024 * 1024;
+    const bestFit = calculateBestFitContext(7, 4.5, 32, 8, 128, freeVram);
+    expect(bestFit.bestFitTokens).toBeGreaterThan(0);
+    expect(bestFit.bestFitLabel).toBeDefined();
+    expect(bestFit.fitsGpu).toBe(true);
   });
 });

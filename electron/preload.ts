@@ -15,11 +15,14 @@ import {
 export interface IElectronAPI {
   // Hardware
   getHardwareProfile(): Promise<HardwareProfile>;
+  getLiveVramUsage(gpuIndex?: number): Promise<{ totalBytes: number; usedBytes: number; freeBytes: number }>;
 
   // Hugging Face
   searchModels(query: string, options?: Record<string, unknown>): Promise<HfModelSearchResult[]>;
   getModelDetails(modelId: string): Promise<HfModelSearchResult>;
   resolveArtifacts(model: HfModelSearchResult): Promise<any>;
+  getModelReadme(modelId: string): Promise<string | null>;
+  getGenerationConfig(modelId: string): Promise<{ temperature?: number; top_p?: number; repetition_penalty?: number; top_k?: number } | null>;
 
   // Credential Vault
   saveToken(token: string, accountName?: string): Promise<boolean>;
@@ -39,17 +42,21 @@ export interface IElectronAPI {
   onInstallProgress(callback: (progress: InstallProgress) => void): () => void;
   runSmokeTest(runtimeId: RuntimeId, modelTag: string): Promise<VerificationResult>;
 
-  // Presets
+  // Cache Scanner & Presets
+  scanLocalModels(): Promise<any[]>;
   getPreset(intent: PresetIntent): Promise<PurposePreset>;
   getJobs(): Promise<any[]>;
 }
 
 const electronAPI: IElectronAPI = {
   getHardwareProfile: () => ipcRenderer.invoke('hardware:getProfile'),
+  getLiveVramUsage: (gpuIndex) => ipcRenderer.invoke('hardware:getLiveVramUsage', gpuIndex),
 
   searchModels: (query, options) => ipcRenderer.invoke('hf:search', query, options),
   getModelDetails: (modelId) => ipcRenderer.invoke('hf:getModelDetails', modelId),
   resolveArtifacts: (model) => ipcRenderer.invoke('hf:resolveArtifacts', model),
+  getModelReadme: (modelId) => ipcRenderer.invoke('hf:getModelReadme', modelId),
+  getGenerationConfig: (modelId) => ipcRenderer.invoke('hf:getGenerationConfig', modelId),
 
   saveToken: (token, accountName) => ipcRenderer.invoke('vault:saveToken', token, accountName),
   getToken: (accountName) => ipcRenderer.invoke('vault:getToken', accountName),
@@ -70,6 +77,7 @@ const electronAPI: IElectronAPI = {
   },
   runSmokeTest: (runtimeId, modelTag) => ipcRenderer.invoke('verify:runSmokeTest', runtimeId, modelTag),
 
+  scanLocalModels: () => ipcRenderer.invoke('cache:scanLocalModels'),
   getPreset: (intent) => ipcRenderer.invoke('presets:get', intent),
   getJobs: () => ipcRenderer.invoke('jobs:list'),
 };

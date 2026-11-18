@@ -14,6 +14,10 @@ import {
   Terminal,
   Loader2,
   StopCircle,
+  RotateCcw,
+  ExternalLink,
+  FileText,
+  Sliders,
 } from 'lucide-react';
 import {
   HardwareProfile,
@@ -32,6 +36,7 @@ import { detectReasoningRequirements, getPurposePreset } from '../../core/preset
 import { DetectedRuntime, QuantOption } from '../types';
 import {
   buildQuantOptionsForModel,
+  estimateMaxContextTokens,
   estimateModelArchitecture,
   formatBytes,
   formatContextLength,
@@ -42,9 +47,29 @@ import { bridgeService } from '../data/mockService';
 interface ModelDetailDrawerProps {
   model: HfModelSearchResult | null;
   hardware: HardwareProfile | null;
+  activeGpuId?: string;
+  safeHeadroomMb?: number;
+  defaultPresetIntent?: PresetIntent;
   runtimes: DetectedRuntime[];
   onClose: () => void;
   onDeploySuccess?: (runtimeId: RuntimeId, modelTag: string, sizeBytes: number) => void;
+}
+
+type DrawerTabId = 'deploy' | 'readme';
+
+interface AuthorGenConfig {
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  repetition_penalty?: number;
+}
+
+interface EditablePresetParams {
+  temperature: number;
+  topP: number;
+  topK: number;
+  minP: number;
+  repeatPenalty: number;
 }
 
 const PRESET_TABS: Array<{ intent: PresetIntent; label: string }> = [
@@ -61,9 +86,144 @@ const RUNTIME_ORDER: Array<{ id: RuntimeId; label: string }> = [
   { id: 'vllm', label: 'vLLM' },
 ];
 
+function stripYamlFrontmatter(md: string): string {
+  if (!md.startsWith('---')) return md;
+  const endIdx = md.indexOf('\n---', 3);
+  if (endIdx === -1) return md;
+  return md.slice(endIdx + 4).trimStart();
+}
+
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  const tokens = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g);
+  return tokens.map((token, idx) => {
+    if (token.startsWith('`') && token.endsWith('`') && token.length >= 2) {
+      return (
+        <code
+          key={idx}
+          className="rounded bg-white/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-[#7dd3fc]"
+        >
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+    if (token.startsWith('**') && token.endsWith('**') && token.length >= 4) {
+      return (
+        <strong key={idx} className="font-semibold text-white">
+          {token.slice(2, -2)}
+        </strong>
+      );
+    }
+    const linkMatch = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+    if (linkMatch) {
+      return (
+        <a
+          key={idx}
+          href={linkMatch[2]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#38bdf8] underline decoration-[#38bdf8]/40 hover:text-[#7dd3fc]"
+        >
+          {linkMatch[1]}
+        </a>
+      );
+    }
+    return <React.Fragment key={idx}>{token}</React.Fragment>;
+  });
+}
+
+const SanitizedMarkdownView: React.FC<{ markdown: string }> = ({ markdown }) => {
+  const cleaned = useMemo(() => stripYamlFrontmatter(markdown), [markdown]);
+  const lines = useMemo(() => cleaned.split(/\r?\n/), [cleaned]);
+
+  const blocks: React.ReactNode[] = [];
+  let inCodeBlock = false;
+  let codeLines: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.trimStart().startsWith('```')) {
+      if (inCodeBlock) {
+        blocks.push(
+          <pre
+            key={`code-${i}`}
+            className="overflow-x-auto rounded-lg border border-white/[0.08] bg-[#05080f] p-3 font-mono text-[11px] leading-relaxed text-slate-200"
+          >
+            <code>{codeLines.join('\n')}</code>
+          </pre>
+        );
+        codeLines = [];
+        inCodeBlock = false;
+      } else {
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(line);
+      continue;
+    }
+
+    if (!line.trim()) {
+      continue;
+    }
+
+    if (line.startsWith('### ')) {
+      blocks.push(
+        <h3 key={`h3-${i}`} className="pt-2 text-sm font-semibold text-white">
+          {renderInlineMarkdown(line.slice(4))}
+        </h3>
+      );
+    } else if (line.startsWith('## ')) {
+      blocks.push(
+        <h2
+          key={`h2-${i}`}
+          className="border-b border-white/[0.07] pt-3 pb-1 text-base font-semibold text-white"
+        >
+          {renderInlineMarkdown(line.slice(3))}
+        </h2>
+      );
+    } else if (line.startsWith('# ')) {
+      blocks.push(
+        <h1 key={`h1-${i}`} className="pt-2 text-lg font-bold text-white">
+          {renderInlineMarkdown(line.slice(2))}
+        </h1>
+      );
+    } else if (/^[-*]\s+/.test(line.trimStart())) {
+      blocks.push(
+        <div key={`li-${i}`} className="flex items-start gap-2 pl-2 text-xs leading-relaxed text-slate-300">
+          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#38bdf8]" aria-hidden={true} />
+          <span>{renderInlineMarkdown(line.trimStart().replace(/^[-*]\s+/, ''))}</span>
+        </div>
+      );
+    } else if (line.trimStart().startsWith('> ')) {
+      blocks.push(
+        <blockquote
+          key={`bq-${i}`}
+          className="border-l-2 border-[#38bdf8]/50 bg-white/[0.02] pl-3 py-1 text-xs italic text-slate-300"
+        >
+          {renderInlineMarkdown(line.trimStart().slice(2))}
+        </blockquote>
+      );
+    } else {
+      blocks.push(
+        <p key={`p-${i}`} className="text-xs leading-relaxed text-slate-300">
+          {renderInlineMarkdown(line)}
+        </p>
+      );
+    }
+  }
+
+  return <div className="space-y-2.5">{blocks}</div>;
+};
+
 export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   model,
   hardware,
+  activeGpuId,
+  safeHeadroomMb = 512,
+  defaultPresetIntent = 'instruct',
   runtimes,
   onClose,
   onDeploySuccess,
@@ -73,16 +233,35 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
   const quantOptions = useMemo(() => (model ? buildQuantOptionsForModel(model) : []), [model]);
   const arch = useMemo(() => (model ? estimateModelArchitecture(model) : null), [model]);
+  const maxContextTokens = useMemo(
+    () => (model ? estimateMaxContextTokens(model) : 32768),
+    [model]
+  );
   const reasoningInfo = useMemo(
     () => (model ? detectReasoningRequirements(model.id, model.tags || []) : null),
     [model]
   );
 
+  const [activeTab, setActiveTab] = useState<DrawerTabId>('deploy');
   const [selectedQuantId, setSelectedQuantId] = useState<string>('Q4_K_M');
   const [contextTokens, setContextTokens] = useState<number>(8192);
-  const [presetIntent, setPresetIntent] = useState<PresetIntent>('instruct');
+  const [presetIntent, setPresetIntent] = useState<PresetIntent>(defaultPresetIntent);
+  const [presetParams, setPresetParams] = useState<EditablePresetParams>(() => {
+    const base = getPurposePreset(defaultPresetIntent);
+    return {
+      temperature: base.temperature,
+      topP: base.topP,
+      topK: base.topK,
+      minP: base.minP,
+      repeatPenalty: base.repeatPenalty,
+    };
+  });
+  const [authorConfig, setAuthorConfig] = useState<AuthorGenConfig | null>(null);
   const [thinkBudgetTokens, setThinkBudgetTokens] = useState<number>(8192);
   const [selectedRuntime, setSelectedRuntime] = useState<RuntimeId>('ollama');
+
+  const [readmeMarkdown, setReadmeMarkdown] = useState<string>('');
+  const [isLoadingReadme, setIsLoadingReadme] = useState(false);
 
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployProgress, setDeployProgress] = useState<InstallProgress | null>(null);
@@ -92,17 +271,38 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   const [isTesting, setIsTesting] = useState(false);
   const [smokeResult, setSmokeResult] = useState<VerificationResult | null>(null);
 
-  // Reset state whenever a new model is opened
+  const buildDefaultParamsForIntent = (
+    intent: PresetIntent,
+    authorCfg: AuthorGenConfig | null
+  ): EditablePresetParams => {
+    const base = getPurposePreset(intent);
+    return {
+      temperature: authorCfg?.temperature ?? base.temperature,
+      topP: authorCfg?.top_p ?? base.topP,
+      topK: authorCfg?.top_k ?? base.topK,
+      minP: base.minP,
+      repeatPenalty: authorCfg?.repetition_penalty ?? base.repeatPenalty,
+    };
+  };
+
+  // Reset state & fetch README + generation_config.json whenever a new model is opened
   useEffect(() => {
     if (!model) return;
+    setActiveTab('deploy');
+
     const opts = buildQuantOptionsForModel(model);
     const defaultQ = opts.find((o) => o.id === 'Q4_K_M') || opts[0];
     setSelectedQuantId(defaultQ?.id || 'Q4_K_M');
-    setContextTokens(8192);
+
+    const archMax = estimateMaxContextTokens(model);
+    setContextTokens(Math.min(8192, archMax));
 
     const reasoning = detectReasoningRequirements(model.id, model.tags || []);
-    setPresetIntent(reasoning.isThinkingModel ? 'reasoning' : 'instruct');
+    const initialIntent = reasoning.isThinkingModel ? 'reasoning' : defaultPresetIntent;
+    setPresetIntent(initialIntent);
     setThinkBudgetTokens(reasoning.recommendedBudget || 8192);
+    setAuthorConfig(null);
+    setPresetParams(buildDefaultParamsForIntent(initialIntent, null));
 
     const firstHealthy = runtimes.find((r) => r.isHealthy);
     setSelectedRuntime(firstHealthy ? firstHealthy.runtimeId : 'ollama');
@@ -114,9 +314,71 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
     setIsTesting(false);
     setSmokeResult(null);
 
+    const controller = new AbortController();
+
+    // Fetch author generation_config.json if available
+    fetch(`https://huggingface.co/${model.id}/raw/main/generation_config.json`, {
+      signal: controller.signal,
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: AuthorGenConfig | null) => {
+        if (!data || controller.signal.aborted) return;
+        const parsed: AuthorGenConfig = {
+          temperature: typeof data.temperature === 'number' ? data.temperature : undefined,
+          top_p: typeof data.top_p === 'number' ? data.top_p : undefined,
+          top_k: typeof data.top_k === 'number' ? data.top_k : undefined,
+          repetition_penalty:
+            typeof data.repetition_penalty === 'number' ? data.repetition_penalty : undefined,
+        };
+        setAuthorConfig(parsed);
+        setPresetParams(buildDefaultParamsForIntent(initialIntent, parsed));
+      })
+      .catch(() => {
+        // Offline or missing generation_config.json — keep preset baseline
+      });
+
+    // Fetch Hugging Face README.md
+    setIsLoadingReadme(true);
+    setReadmeMarkdown('');
+    fetch(`https://huggingface.co/${model.id}/raw/main/README.md`, {
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then((md) => {
+        if (!controller.signal.aborted) {
+          setReadmeMarkdown(md);
+          setIsLoadingReadme(false);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          const fallback = [
+            `# ${model.id}`,
+            '',
+            model.description || 'Hugging Face repository model card.',
+            '',
+            '## Repository Details',
+            `- **Author:** ${model.author}`,
+            `- **Pipeline:** ${formatPipelineTag(model.pipeline_tag)}`,
+            `- **Downloads:** ${(model.downloads || 0).toLocaleString()}`,
+            `- **Likes:** ${(model.likes || 0).toLocaleString()}`,
+            '',
+            '> Live README.md could not be fetched (offline or gated repository). Use **Open on Hugging Face** above to view in your browser.',
+          ].join('\n');
+          setReadmeMarkdown(fallback);
+          setIsLoadingReadme(false);
+        }
+      });
+
     const timer = setTimeout(() => closeBtnRef.current?.focus(), 40);
-    return () => clearTimeout(timer);
-  }, [model, runtimes]);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [model, runtimes, defaultPresetIntent]);
 
   // Escape key closes drawer
   useEffect(() => {
@@ -142,6 +404,19 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
     arch.headDim,
     contextTokens
   );
+  const headroomBytes = safeHeadroomMb * 1024 * 1024;
+
+  const activeGpu =
+    (activeGpuId ? hardware?.gpus.find((g) => g.id === activeGpuId) : undefined) ||
+    hardware?.gpus[0];
+
+  const totalFreeVram = activeGpu
+    ? activeGpu.vramFreeBytes
+    : hardware
+      ? hardware.gpus.reduce((sum, g) => sum + g.vramFreeBytes, 0)
+      : 14.8 * 1024 * 1024 * 1024;
+
+  const effectiveFreeVram = Math.max(0, totalFreeVram - headroomBytes);
 
   const fitResult = hardware
     ? evaluateHardwareFit(
@@ -151,23 +426,46 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
         arch.kvHeads,
         arch.headDim,
         contextTokens,
-        hardware
+        {
+          ...hardware,
+          gpus: activeGpu
+            ? [{ ...activeGpu, vramFreeBytes: effectiveFreeVram }]
+            : hardware.gpus,
+        }
       )
     : null;
 
-  const totalFreeVram = hardware
-    ? hardware.gpus.reduce((sum, g) => sum + g.vramFreeBytes, 0)
-    : 14.5 * 1024 * 1024 * 1024;
-  const totalEstimatedVram = fitResult ? fitResult.estimatedVramBytes : weightBytes + kvCacheBytes;
+  const totalEstimatedVram = weightBytes + kvCacheBytes + headroomBytes;
+  const barScaleDenom = Math.max(totalFreeVram, totalEstimatedVram, 1);
 
-  const weightBarPct = Math.min(100, (weightBytes / Math.max(totalFreeVram, totalEstimatedVram)) * 100);
-  const kvBarPct = Math.min(
-    100 - weightBarPct,
-    (kvCacheBytes / Math.max(totalFreeVram, totalEstimatedVram)) * 100
+  const weightBarPct = Math.min(100, (weightBytes / barScaleDenom) * 100);
+  const kvBarPct = Math.min(100 - weightBarPct, (kvCacheBytes / barScaleDenom) * 100);
+  const headroomBarPct = Math.min(
+    100 - weightBarPct - kvBarPct,
+    (headroomBytes / barScaleDenom) * 100
   );
 
   const activePreset = getPurposePreset(presetIntent);
-  const shortModelTag = `${model.id.split('/').pop() || model.id}:${selectedQuant.id.toLowerCase()}`;
+  const shortModelTag = `hf.co/${model.id}:${selectedQuant.id}`;
+  const hasAuthorDefaults = Boolean(
+    authorConfig &&
+      (authorConfig.temperature !== undefined ||
+        authorConfig.top_p !== undefined ||
+        authorConfig.top_k !== undefined ||
+        authorConfig.repetition_penalty !== undefined)
+  );
+
+  const handleSelectPresetTab = (intent: PresetIntent) => {
+    setPresetIntent(intent);
+    setPresetParams(buildDefaultParamsForIntent(intent, authorConfig));
+  };
+
+  const handleRestoreDefaults = () => {
+    setPresetParams(buildDefaultParamsForIntent(presetIntent, authorConfig));
+    if (presetIntent === 'reasoning') {
+      setThinkBudgetTokens(reasoningInfo?.recommendedBudget || 8192);
+    }
+  };
 
   const handleDeploy = async () => {
     if (isDeploying) return;
@@ -208,19 +506,28 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
     setIsTesting(false);
   };
 
+  const handleOpenInBrowser = () => {
+    window.open(`https://huggingface.co/${model.id}`, '_blank', 'noopener,noreferrer');
+  };
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="drawer-model-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="fluent-acrylic flex h-full w-full max-w-2xl flex-col border-l border-white/[0.1] shadow-2xl">
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+        aria-hidden="true"
+        onClick={onClose}
+      />
+
+      {/* Right-Aligned Drawer */}
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="drawer-model-title"
+        className="fixed inset-y-0 right-0 z-50 w-full max-w-3xl flex flex-col border-l border-white/[0.1] shadow-2xl bg-[#090d16]"
+      >
         {/* Drawer Header */}
-        <header className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-6 py-5">
+        <header className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-6 py-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium text-slate-400">{model.author}</span>
@@ -259,394 +566,571 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
           </button>
         </header>
 
-        {/* Scrollable Configuration Body */}
-        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
-          {/* 1. GGUF Quantization Selector */}
-          <section aria-labelledby="quant-heading">
-            <div className="mb-2.5 flex items-center justify-between">
-              <h3 id="quant-heading" className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-                Quantization Artifact
-              </h3>
-              <span className="text-xs text-slate-400">{selectedQuant.filename}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Quantization format">
-              {quantOptions.map((q) => {
-                const selected = q.id === selectedQuant.id;
-                return (
-                  <button
-                    key={q.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => setSelectedQuantId(q.id)}
-                    className={`rounded-lg border p-2.5 text-left transition-all ${
-                      selected
-                        ? 'border-[#38bdf8]/60 bg-[#0078d4]/20 shadow-[0_0_0_1px_rgba(56,189,248,0.25)]'
-                        : 'border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.06]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-white">{q.label}</span>
-                      <span className="text-xs font-medium text-[#7dd3fc]">
-                        {formatBytes(q.sizeBytes)}
-                      </span>
-                    </div>
-                    <div className="mt-1 truncate text-[11px] text-slate-400">{q.qualityNote}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* 2. Real-time Hardware Sizing Meter */}
-          <section
-            aria-labelledby="sizing-heading"
-            className="fluent-card rounded-xl p-4 space-y-4"
+        {/* Top Drawer Tabs */}
+        <div
+          role="tablist"
+          aria-label="Model detail views"
+          className="flex items-center gap-1 border-b border-white/[0.08] bg-[#0c1220] px-6 py-2"
+        >
+          <button
+            type="button"
+            role="tab"
+            id="tab-deploy"
+            aria-selected={activeTab === 'deploy'}
+            aria-controls="panel-deploy"
+            onClick={() => setActiveTab('deploy')}
+            className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
+              activeTab === 'deploy'
+                ? 'bg-[#0078d4]/25 text-[#7dd3fc] border border-[#38bdf8]/40'
+                : 'text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 border border-transparent'
+            }`}
           >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3
-                id="sizing-heading"
-                className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-200"
-              >
-                <Cpu className="h-4 w-4 text-[#38bdf8]" aria-hidden={true} />
-                Real-Time Hardware Sizing
-              </h3>
+            <Sliders className="h-3.5 w-3.5" aria-hidden={true} />
+            Deployment &amp; Sizing
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-readme"
+            aria-selected={activeTab === 'readme'}
+            aria-controls="panel-readme"
+            onClick={() => setActiveTab('readme')}
+            className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
+              activeTab === 'readme'
+                ? 'bg-[#0078d4]/25 text-[#7dd3fc] border border-[#38bdf8]/40'
+                : 'text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 border border-transparent'
+            }`}
+          >
+            <FileText className="h-3.5 w-3.5" aria-hidden={true} />
+            Model Card &amp; README
+          </button>
+        </div>
 
-              {fitResult && (
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-0.5 text-xs font-medium ${
-                    fitResult.status === 'supported'
-                      ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
-                      : fitResult.status === 'conditional'
-                        ? 'border-amber-500/35 bg-amber-500/15 text-amber-300'
-                        : 'border-rose-500/35 bg-rose-500/15 text-rose-300'
-                  }`}
-                >
-                  {fitResult.status === 'supported' ? (
-                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden={true} />
-                  ) : (
-                    <AlertTriangle className="h-3.5 w-3.5" aria-hidden={true} />
+        {/* Tab Panel 1: Deployment & Sizing */}
+        {activeTab === 'deploy' ? (
+          <>
+            <div
+              id="panel-deploy"
+              role="tabpanel"
+              aria-labelledby="tab-deploy"
+              className="flex-1 space-y-6 overflow-y-auto px-6 py-5"
+            >
+              {/* 1. GGUF Quantization Selector */}
+              <section aria-labelledby="quant-heading">
+                <div className="mb-2.5 flex items-center justify-between">
+                  <h3 id="quant-heading" className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                    Quantization Artifact
+                  </h3>
+                  <span className="truncate text-xs text-slate-400">{selectedQuant.filename}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Quantization format">
+                  {quantOptions.map((q) => {
+                    const selected = q.id === selectedQuant.id;
+                    return (
+                      <button
+                        key={q.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => setSelectedQuantId(q.id)}
+                        className={`rounded-lg border p-2.5 text-left transition-all ${
+                          selected
+                            ? 'border-[#38bdf8]/60 bg-[#0078d4]/20 shadow-[0_0_0_1px_rgba(56,189,248,0.25)]'
+                            : 'border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-white">{q.label}</span>
+                          <span className="text-xs font-medium text-[#7dd3fc]">
+                            {formatBytes(q.sizeBytes)}
+                          </span>
+                        </div>
+                        <div className="mt-1 truncate text-[11px] text-slate-400">{q.qualityNote}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* 2. Real-time Hardware Sizing Meter with 512MB Safe Headroom */}
+              <section
+                aria-labelledby="sizing-heading"
+                className="fluent-card rounded-xl p-4 space-y-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3
+                    id="sizing-heading"
+                    className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-200"
+                  >
+                    <Cpu className="h-4 w-4 text-[#38bdf8]" aria-hidden={true} />
+                    Real-Time Hardware Sizing
+                    {activeGpu && (
+                      <span className="font-normal normal-case text-slate-400">
+                        ({activeGpu.name})
+                      </span>
+                    )}
+                  </h3>
+
+                  {fitResult && (
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-0.5 text-xs font-medium ${
+                        fitResult.status === 'supported'
+                          ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
+                          : fitResult.status === 'conditional'
+                            ? 'border-amber-500/35 bg-amber-500/15 text-amber-300'
+                            : 'border-rose-500/35 bg-rose-500/15 text-rose-300'
+                      }`}
+                    >
+                      {fitResult.status === 'supported' ? (
+                        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden={true} />
+                      ) : (
+                        <AlertTriangle className="h-3.5 w-3.5" aria-hidden={true} />
+                      )}
+                      {fitResult.status === 'supported'
+                        ? 'Full GPU Fit'
+                        : fitResult.status === 'conditional'
+                          ? 'Partial Offload'
+                          : 'CPU Only'}
+                    </span>
                   )}
-                  {fitResult.status === 'supported'
-                    ? 'Full GPU Fit'
-                    : fitResult.status === 'conditional'
-                      ? 'Partial Offload'
-                      : 'CPU Only'}
-                </span>
-              )}
-            </div>
-
-            {/* Stacked VRAM Breakdown Bar */}
-            <div>
-              <div className="mb-1.5 flex items-center justify-between text-xs">
-                <span className="text-slate-300">
-                  Estimated Footprint:{' '}
-                  <strong className="text-white">{formatBytes(totalEstimatedVram)}</strong>
-                </span>
-                <span className="text-slate-400">
-                  Available VRAM: <strong className="text-slate-200">{formatBytes(totalFreeVram)}</strong>
-                </span>
-              </div>
-
-              <div
-                className="flex h-3 w-full overflow-hidden rounded-full bg-white/[0.08]"
-                role="img"
-                aria-label={`VRAM breakdown: Weights ${formatBytes(weightBytes)}, KV Cache ${formatBytes(kvCacheBytes)}`}
-              >
-                <div
-                  className="h-full bg-[#0078d4] transition-all duration-300"
-                  style={{ width: `${weightBarPct}%` }}
-                  title={`Weights: ${formatBytes(weightBytes)}`}
-                />
-                <div
-                  className="h-full bg-[#a855f7] transition-all duration-300"
-                  style={{ width: `${kvBarPct}%` }}
-                  title={`KV Cache: ${formatBytes(kvCacheBytes)}`}
-                />
-              </div>
-
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-300">
-                <div className="flex items-center gap-4">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-[#0078d4]" aria-hidden={true} />
-                    Weights: <strong>{formatBytes(weightBytes)}</strong>
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-[#a855f7]" aria-hidden={true} />
-                    KV Cache: <strong>{formatBytes(kvCacheBytes)}</strong>
-                  </span>
                 </div>
 
-                {fitResult && (
-                  <span className="inline-flex items-center gap-1.5 text-slate-200">
-                    <Layers className="h-3.5 w-3.5 text-[#38bdf8]" aria-hidden={true} />
-                    GPU Offload:{' '}
-                    <strong>
-                      {fitResult.maxOffloadLayers}/{fitResult.totalLayers} layers
-                    </strong>
-                  </span>
-                )}
-              </div>
-            </div>
+                {/* Stacked VRAM Breakdown Bar (Weights + KV Cache + 512MB Headroom) */}
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between text-xs">
+                    <span className="text-slate-300">
+                      Total Footprint + Headroom:{' '}
+                      <strong className="text-white">{formatBytes(totalEstimatedVram)}</strong>
+                    </span>
+                    <span className="text-slate-400">
+                      Live Free VRAM: <strong className="text-slate-200">{formatBytes(totalFreeVram)}</strong>
+                    </span>
+                  </div>
 
-            {/* Context Window Slider (2048 to 128k) */}
-            <div className="border-t border-white/[0.06] pt-3">
-              <div className="mb-1.5 flex items-center justify-between text-xs">
-                <label htmlFor="context-slider" className="font-medium text-slate-200">
-                  Context Window (n_ctx)
-                </label>
-                <span className="rounded bg-white/[0.06] px-2 py-0.5 font-mono text-xs text-[#7dd3fc]">
-                  {contextTokens.toLocaleString()} tokens ({formatContextLength(contextTokens)})
-                </span>
-              </div>
-              <input
-                id="context-slider"
-                type="range"
-                min={2048}
-                max={131072}
-                step={2048}
-                value={contextTokens}
-                onChange={(e) => setContextTokens(Number(e.target.value))}
-                className="fluent-slider w-full"
-              />
-              <div className="mt-1 flex justify-between text-[10px] text-slate-500">
-                <span>2K</span>
-                <span>32K</span>
-                <span>64K</span>
-                <span>128K</span>
-              </div>
-            </div>
-          </section>
-
-          {/* 3. Purpose Preset Toggle */}
-          <section aria-labelledby="preset-heading" className="space-y-3">
-            <h3 id="preset-heading" className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-              Purpose Preset
-            </h3>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="tablist" aria-label="Inference purpose presets">
-              {PRESET_TABS.map((tab) => {
-                const isSelected = presetIntent === tab.intent;
-                const isReasoning = tab.intent === 'reasoning';
-                return (
-                  <button
-                    key={tab.intent}
-                    type="button"
-                    role="tab"
-                    aria-selected={isSelected}
-                    onClick={() => setPresetIntent(tab.intent)}
-                    className={`rounded-lg border px-2.5 py-2 text-center text-xs font-medium transition-all ${
-                      isSelected
-                        ? isReasoning
-                          ? 'border-purple-400/60 bg-purple-500/20 text-purple-200'
-                          : 'border-[#38bdf8]/60 bg-[#0078d4]/25 text-[#7dd3fc]'
-                        : 'border-white/[0.08] bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-white'
-                    }`}
+                  <div
+                    className="flex h-3 w-full overflow-hidden rounded-full bg-white/[0.08]"
+                    role="img"
+                    aria-label={`VRAM breakdown: Weights ${formatBytes(weightBytes)}, KV Cache ${formatBytes(kvCacheBytes)}, Safe Headroom ${safeHeadroomMb} MB`}
                   >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
+                    <div
+                      className="h-full bg-[#0078d4] transition-all duration-300"
+                      style={{ width: `${weightBarPct}%` }}
+                      title={`Weights: ${formatBytes(weightBytes)}`}
+                    />
+                    <div
+                      className="h-full bg-[#a855f7] transition-all duration-300"
+                      style={{ width: `${kvBarPct}%` }}
+                      title={`KV Cache: ${formatBytes(kvCacheBytes)}`}
+                    />
+                    <div
+                      className="h-full bg-amber-500/80 transition-all duration-300"
+                      style={{ width: `${headroomBarPct}%` }}
+                      title={`Safe VRAM Headroom: ${safeHeadroomMb} MB`}
+                    />
+                  </div>
 
-            {/* Preset Details + Think Budget Slider when Reasoning selected */}
-            <div
-              className={`rounded-xl border p-3.5 text-xs ${
-                presetIntent === 'reasoning'
-                  ? 'border-purple-400/30 bg-purple-500/[0.08]'
-                  : 'border-white/[0.08] bg-white/[0.03]'
-              }`}
-            >
-              <p className="text-slate-300">{activePreset.description}</p>
-              <div className="mt-2.5 flex flex-wrap gap-3 font-mono text-[11px] text-slate-400">
-                <span>temp={activePreset.temperature}</span>
-                <span>top_p={activePreset.topP}</span>
-                <span>top_k={activePreset.topK}</span>
-                <span>min_p={activePreset.minP}</span>
-                <span>repeat_penalty={activePreset.repeatPenalty}</span>
-              </div>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-300">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-[#0078d4]" aria-hidden={true} />
+                        Weights: <strong>{formatBytes(weightBytes)}</strong>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-[#a855f7]" aria-hidden={true} />
+                        KV Cache: <strong>{formatBytes(kvCacheBytes)}</strong>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-amber-500/80" aria-hidden={true} />
+                        Headroom: <strong>{safeHeadroomMb} MB</strong>
+                      </span>
+                    </div>
 
-              {presetIntent === 'reasoning' && (
-                <div className="mt-3 border-t border-purple-400/20 pt-3">
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <label htmlFor="think-budget-slider" className="font-medium text-purple-200">
-                      Think-Budget Tokens
+                    {fitResult && (
+                      <span className="inline-flex items-center gap-1.5 text-slate-200">
+                        <Layers className="h-3.5 w-3.5 text-[#38bdf8]" aria-hidden={true} />
+                        GPU Offload:{' '}
+                        <strong>
+                          {fitResult.maxOffloadLayers}/{fitResult.totalLayers} layers
+                        </strong>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Context Window Slider Clamped to Architectural Maximum */}
+                <div className="border-t border-white/[0.06] pt-3">
+                  <div className="mb-1.5 flex items-center justify-between text-xs">
+                    <label htmlFor="context-slider" className="font-medium text-slate-200">
+                      Context Window (clamped to {formatContextLength(maxContextTokens)} max)
                     </label>
-                    <span className="rounded bg-purple-500/20 px-2 py-0.5 font-mono text-xs text-purple-200">
-                      {thinkBudgetTokens.toLocaleString()} tokens
+                    <span className="rounded bg-white/[0.06] px-2 py-0.5 font-mono text-xs text-[#7dd3fc]">
+                      {contextTokens.toLocaleString()} tokens ({formatContextLength(contextTokens)})
                     </span>
                   </div>
                   <input
-                    id="think-budget-slider"
+                    id="context-slider"
                     type="range"
-                    min={1024}
-                    max={32768}
-                    step={1024}
-                    value={thinkBudgetTokens}
-                    onChange={(e) => setThinkBudgetTokens(Number(e.target.value))}
-                    className="fluent-slider fluent-slider-purple w-full"
+                    min={2048}
+                    max={maxContextTokens}
+                    step={2048}
+                    value={Math.min(contextTokens, maxContextTokens)}
+                    onChange={(e) => setContextTokens(Number(e.target.value))}
+                    className="fluent-slider w-full"
                   />
+                  <div className="mt-1 flex justify-between text-[10px] text-slate-500">
+                    <span>2K</span>
+                    <span>{formatContextLength(Math.round(maxContextTokens / 4))}</span>
+                    <span>{formatContextLength(Math.round(maxContextTokens / 2))}</span>
+                    <span>{formatContextLength(maxContextTokens)} (Model Max)</span>
+                  </div>
                 </div>
-              )}
-            </div>
-          </section>
+              </section>
 
-          {/* 4. Runtime Selector */}
-          <section aria-labelledby="runtime-heading" className="space-y-2.5">
-            <h3 id="runtime-heading" className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-              Target Local Runtime
-            </h3>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Target runtime">
-              {RUNTIME_ORDER.map((rt) => {
-                const detected = runtimes.find((r) => r.runtimeId === rt.id);
-                const isOnline = detected?.isHealthy ?? false;
-                const isSelected = selectedRuntime === rt.id;
-
-                return (
+              {/* 3. Purpose Preset Editor + Restore Defaults */}
+              <section aria-labelledby="preset-heading" className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h3 id="preset-heading" className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                      Purpose Preset
+                    </h3>
+                    <span className="rounded border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-400">
+                      {hasAuthorDefaults ? 'Author generation_config.json' : 'Preset Baseline'}
+                    </span>
+                  </div>
                   <button
-                    key={rt.id}
                     type="button"
-                    role="radio"
-                    aria-checked={isSelected}
-                    onClick={() => setSelectedRuntime(rt.id)}
-                    className={`flex flex-col justify-between rounded-lg border p-2.5 text-left transition-all ${
-                      isSelected
-                        ? 'border-[#38bdf8]/60 bg-[#0078d4]/20'
-                        : 'border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.06]'
-                    }`}
+                    onClick={handleRestoreDefaults}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-white">{rt.label}</span>
-                      <span
-                        className={`h-2 w-2 rounded-full ${
-                          isOnline ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]' : 'bg-slate-600'
+                    <RotateCcw className="h-3 w-3 text-[#38bdf8]" aria-hidden={true} />
+                    Restore Defaults
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="tablist" aria-label="Inference purpose presets">
+                  {PRESET_TABS.map((tab) => {
+                    const isSelected = presetIntent === tab.intent;
+                    const isReasoning = tab.intent === 'reasoning';
+                    return (
+                      <button
+                        key={tab.intent}
+                        type="button"
+                        role="tab"
+                        aria-selected={isSelected}
+                        onClick={() => handleSelectPresetTab(tab.intent)}
+                        className={`rounded-lg border px-2.5 py-2 text-center text-xs font-medium transition-all ${
+                          isSelected
+                            ? isReasoning
+                              ? 'border-purple-400/60 bg-purple-500/20 text-purple-200'
+                              : 'border-[#38bdf8]/60 bg-[#0078d4]/25 text-[#7dd3fc]'
+                            : 'border-white/[0.08] bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-white'
                         }`}
-                        title={isOnline ? 'Detected & Online' : 'Not Detected'}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Editable Preset Parameters + Think Budget Slider */}
+                <div
+                  className={`rounded-xl border p-3.5 text-xs space-y-3 ${
+                    presetIntent === 'reasoning'
+                      ? 'border-purple-400/30 bg-purple-500/[0.08]'
+                      : 'border-white/[0.08] bg-white/[0.03]'
+                  }`}
+                >
+                  <p className="text-slate-300">{activePreset.description}</p>
+                  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+                    <label className="space-y-1">
+                      <span className="block text-[11px] text-slate-400">Temperature</span>
+                      <input
+                        type="number"
+                        step={0.05}
+                        min={0}
+                        max={2}
+                        value={presetParams.temperature}
+                        onChange={(e) =>
+                          setPresetParams((p) => ({ ...p, temperature: Number(e.target.value) }))
+                        }
+                        className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="block text-[11px] text-slate-400">top_p</span>
+                      <input
+                        type="number"
+                        step={0.01}
+                        min={0}
+                        max={1}
+                        value={presetParams.topP}
+                        onChange={(e) =>
+                          setPresetParams((p) => ({ ...p, topP: Number(e.target.value) }))
+                        }
+                        className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="block text-[11px] text-slate-400">top_k</span>
+                      <input
+                        type="number"
+                        step={1}
+                        min={0}
+                        max={200}
+                        value={presetParams.topK}
+                        onChange={(e) =>
+                          setPresetParams((p) => ({ ...p, topK: Number(e.target.value) }))
+                        }
+                        className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="block text-[11px] text-slate-400">min_p</span>
+                      <input
+                        type="number"
+                        step={0.01}
+                        min={0}
+                        max={1}
+                        value={presetParams.minP}
+                        onChange={(e) =>
+                          setPresetParams((p) => ({ ...p, minP: Number(e.target.value) }))
+                        }
+                        className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="block text-[11px] text-slate-400">repeat_penalty</span>
+                      <input
+                        type="number"
+                        step={0.05}
+                        min={0.5}
+                        max={2}
+                        value={presetParams.repeatPenalty}
+                        onChange={(e) =>
+                          setPresetParams((p) => ({ ...p, repeatPenalty: Number(e.target.value) }))
+                        }
+                        className="w-full rounded border border-white/[0.1] bg-[#090d16] px-2 py-1 font-mono text-xs text-white focus:border-[#38bdf8] focus:outline-none"
+                      />
+                    </label>
+                  </div>
+
+                  {presetIntent === 'reasoning' && (
+                    <div className="border-t border-purple-400/20 pt-3">
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <label htmlFor="think-budget-slider" className="font-medium text-purple-200">
+                          Think-Budget Tokens
+                        </label>
+                        <span className="rounded bg-purple-500/20 px-2 py-0.5 font-mono text-xs text-purple-200">
+                          {thinkBudgetTokens.toLocaleString()} tokens
+                        </span>
+                      </div>
+                      <input
+                        id="think-budget-slider"
+                        type="range"
+                        min={1024}
+                        max={32768}
+                        step={1024}
+                        value={thinkBudgetTokens}
+                        onChange={(e) => setThinkBudgetTokens(Number(e.target.value))}
+                        className="fluent-slider fluent-slider-purple w-full"
                       />
                     </div>
-                    <span className="mt-1 text-[11px] text-slate-400">
-                      {isOnline ? detected?.version || 'Online' : 'Not detected'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+                  )}
+                </div>
+              </section>
 
-          {/* 5. Deployment Progress & Live Smoke Test Results */}
-          {(isDeploying || deployProgress || deployDone || deployError) && (
-            <section
-              aria-live="polite"
-              className="fluent-card rounded-xl p-4 space-y-2.5"
-            >
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-medium text-slate-200">
-                  {deployDone
-                    ? `Deployed to ${selectedRuntime} successfully`
-                    : deployError
-                      ? deployError
-                      : deployProgress?.stepDescription || 'Preparing deployment...'}
+              {/* 4. Runtime Selector */}
+              <section aria-labelledby="runtime-heading" className="space-y-2.5">
+                <h3 id="runtime-heading" className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                  Target Local Runtime
+                </h3>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Target runtime">
+                  {RUNTIME_ORDER.map((rt) => {
+                    const detected = runtimes.find((r) => r.runtimeId === rt.id);
+                    const isOnline = detected?.isHealthy ?? false;
+                    const isSelected = selectedRuntime === rt.id;
+
+                    return (
+                      <button
+                        key={rt.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={isSelected}
+                        onClick={() => setSelectedRuntime(rt.id)}
+                        className={`flex flex-col justify-between rounded-lg border p-2.5 text-left transition-all ${
+                          isSelected
+                            ? 'border-[#38bdf8]/60 bg-[#0078d4]/20'
+                            : 'border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-white">{rt.label}</span>
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              isOnline ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]' : 'bg-slate-600'
+                            }`}
+                            title={isOnline ? 'Detected & Online' : 'Not Detected'}
+                          />
+                        </div>
+                        <span className="mt-1 text-[11px] text-slate-400">
+                          {isOnline ? detected?.version || 'Online' : 'Not detected'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* 5. Deployment Progress & Live Smoke Test Results */}
+              {(isDeploying || deployProgress || deployDone || deployError) && (
+                <section
+                  aria-live="polite"
+                  className="fluent-card rounded-xl p-4 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-slate-200">
+                      {deployDone
+                        ? `Deployed to ${selectedRuntime} successfully`
+                        : deployError
+                          ? deployError
+                          : deployProgress?.stepDescription || 'Preparing deployment...'}
+                    </span>
+                    {deployProgress && (
+                      <span className="font-mono text-[#7dd3fc]">{deployProgress.percentComplete}%</span>
+                    )}
+                  </div>
+
+                  <div
+                    role="progressbar"
+                    aria-valuenow={deployProgress?.percentComplete ?? 0}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    className="h-2 w-full overflow-hidden rounded-full bg-white/[0.08]"
+                  >
+                    <div
+                      className={`h-full transition-all duration-150 ${
+                        deployDone
+                          ? 'bg-emerald-400'
+                          : deployError
+                            ? 'bg-rose-500'
+                            : 'bg-gradient-to-r from-[#0078d4] to-[#38bdf8]'
+                      }`}
+                      style={{ width: `${deployDone ? 100 : deployProgress?.percentComplete ?? 0}%` }}
+                    />
+                  </div>
+                </section>
+              )}
+
+              {smokeResult && (
+                <section
+                  aria-live="polite"
+                  className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] p-4 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
+                      <Zap className="h-4 w-4" aria-hidden={true} />
+                      Smoke Test Passed
+                    </span>
+                    <div className="flex items-center gap-3 font-mono text-xs text-slate-200">
+                      <span>
+                        TTFT: <strong className="text-emerald-300">{smokeResult.latencyToFirstTokenMs} ms</strong>
+                      </span>
+                      <span>
+                        Speed: <strong className="text-[#7dd3fc]">{smokeResult.tokensPerSecond.toFixed(1)} tok/s</strong>
+                      </span>
+                    </div>
+                  </div>
+                  {smokeResult.rawOutputSample && (
+                    <div className="flex items-start gap-2 rounded-lg bg-[#090d16]/70 p-2.5 font-mono text-[11px] text-slate-300">
+                      <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden={true} />
+                      <span>{smokeResult.rawOutputSample}</span>
+                    </div>
+                  )}
+                </section>
+              )}
+            </div>
+
+            {/* Sticky Footer: Disk Space Preview, One-Click Deploy & Smoke Test */}
+            <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.08] bg-[#090d16]/95 px-6 py-4">
+              <div className="flex items-center gap-2 text-xs text-slate-300">
+                <HardDrive className="h-4 w-4 text-slate-400" aria-hidden={true} />
+                <span>
+                  Disk required: <strong className="text-white">{formatBytes(selectedQuant.sizeBytes)}</strong>
                 </span>
-                {deployProgress && (
-                  <span className="font-mono text-[#7dd3fc]">{deployProgress.percentComplete}%</span>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleSmokeTest}
+                  disabled={isTesting || isDeploying}
+                  className="inline-flex items-center gap-2 rounded-lg border border-white/[0.12] bg-white/[0.05] px-3.5 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white disabled:opacity-50"
+                >
+                  {isTesting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-[#38bdf8]" aria-hidden={true} />
+                  ) : (
+                    <Play className="h-3.5 w-3.5 text-[#38bdf8]" aria-hidden={true} />
+                  )}
+                  {isTesting ? 'Testing...' : 'Live Smoke Test'}
+                </button>
+
+                {isDeploying ? (
+                  <button
+                    type="button"
+                    onClick={handleCancelDeploy}
+                    className="inline-flex items-center gap-2 rounded-lg border border-rose-500/40 bg-rose-500/20 px-4 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/30"
+                  >
+                    <StopCircle className="h-4 w-4" aria-hidden={true} />
+                    Cancel
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleDeploy}
+                    className="inline-flex items-center gap-2 rounded-lg bg-[#0078d4] px-4 py-2 text-xs font-semibold text-white shadow-md shadow-[#0078d4]/30 transition-colors hover:bg-[#1084d8]"
+                  >
+                    <Download className="h-4 w-4" aria-hidden={true} />
+                    {deployDone ? 'Redeploy Model' : 'One-Click Deploy'}
+                  </button>
                 )}
               </div>
-
-              <div
-                role="progressbar"
-                aria-valuenow={deployProgress?.percentComplete ?? 0}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                className="h-2 w-full overflow-hidden rounded-full bg-white/[0.08]"
+            </footer>
+          </>
+        ) : (
+          /* Tab Panel 2: Model Card & README */
+          <div
+            id="panel-readme"
+            role="tabpanel"
+            aria-labelledby="tab-readme"
+            className="flex flex-1 flex-col overflow-hidden"
+          >
+            <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02] px-6 py-3">
+              <span className="truncate font-mono text-xs text-slate-400">
+                huggingface.co/{model.id}
+              </span>
+              <button
+                type="button"
+                onClick={handleOpenInBrowser}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#38bdf8]/35 bg-[#0078d4]/20 px-3 py-1.5 text-xs font-medium text-[#7dd3fc] transition-colors hover:bg-[#0078d4]/35"
               >
-                <div
-                  className={`h-full transition-all duration-150 ${
-                    deployDone
-                      ? 'bg-emerald-400'
-                      : deployError
-                        ? 'bg-rose-500'
-                        : 'bg-gradient-to-r from-[#0078d4] to-[#38bdf8]'
-                  }`}
-                  style={{ width: `${deployDone ? 100 : deployProgress?.percentComplete ?? 0}%` }}
-                />
-              </div>
-            </section>
-          )}
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden={true} />
+                Open in Browser
+              </button>
+            </div>
 
-          {smokeResult && (
-            <section
-              aria-live="polite"
-              className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] p-4 space-y-2.5"
-            >
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
-                  <Zap className="h-4 w-4" aria-hidden={true} />
-                  Smoke Test Passed
-                </span>
-                <div className="flex items-center gap-3 font-mono text-xs text-slate-200">
-                  <span>
-                    TTFT: <strong className="text-emerald-300">{smokeResult.latencyToFirstTokenMs} ms</strong>
-                  </span>
-                  <span>
-                    Speed: <strong className="text-[#7dd3fc]">{smokeResult.tokensPerSecond.toFixed(1)} tok/s</strong>
-                  </span>
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              {isLoadingReadme ? (
+                <div className="flex items-center gap-2.5 text-xs text-slate-400" aria-busy="true">
+                  <Loader2 className="h-4 w-4 animate-spin text-[#38bdf8]" aria-hidden={true} />
+                  Fetching README.md from Hugging Face Hub...
                 </div>
-              </div>
-              {smokeResult.rawOutputSample && (
-                <div className="flex items-start gap-2 rounded-lg bg-[#090d16]/70 p-2.5 font-mono text-[11px] text-slate-300">
-                  <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden={true} />
-                  <span>{smokeResult.rawOutputSample}</span>
-                </div>
-              )}
-            </section>
-          )}
-        </div>
-
-        {/* Sticky Footer: Disk Space Preview, One-Click Deploy & Smoke Test */}
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.08] bg-[#090d16]/90 px-6 py-4">
-          <div className="flex items-center gap-2 text-xs text-slate-300">
-            <HardDrive className="h-4 w-4 text-slate-400" aria-hidden={true} />
-            <span>
-              Disk required: <strong className="text-white">{formatBytes(selectedQuant.sizeBytes)}</strong>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={handleSmokeTest}
-              disabled={isTesting || isDeploying}
-              className="inline-flex items-center gap-2 rounded-lg border border-white/[0.12] bg-white/[0.05] px-3.5 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white disabled:opacity-50"
-            >
-              {isTesting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#38bdf8]" aria-hidden={true} />
               ) : (
-                <Play className="h-3.5 w-3.5 text-[#38bdf8]" aria-hidden={true} />
+                <SanitizedMarkdownView markdown={readmeMarkdown} />
               )}
-              {isTesting ? 'Testing...' : 'Live Smoke Test'}
-            </button>
-
-            {isDeploying ? (
-              <button
-                type="button"
-                onClick={handleCancelDeploy}
-                className="inline-flex items-center gap-2 rounded-lg border border-rose-500/40 bg-rose-500/20 px-4 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/30"
-              >
-                <StopCircle className="h-4 w-4" aria-hidden={true} />
-                Cancel
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleDeploy}
-                className="inline-flex items-center gap-2 rounded-lg bg-[#0078d4] px-4 py-2 text-xs font-semibold text-white shadow-md shadow-[#0078d4]/30 transition-colors hover:bg-[#1084d8]"
-              >
-                <Download className="h-4 w-4" aria-hidden={true} />
-                {deployDone ? 'Redeploy Model' : 'One-Click Deploy'}
-              </button>
-            )}
+            </div>
           </div>
-        </footer>
-      </div>
-    </div>
+        )}
+      </aside>
+    </>
   );
 };

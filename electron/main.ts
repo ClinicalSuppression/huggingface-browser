@@ -1,11 +1,12 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'path';
-import { detectHardware } from '../src/core/hardware';
+import { detectHardware, getLiveVramUsage } from '../src/core/hardware';
 import { HuggingFaceClient } from '../src/core/hf-client';
 import { CredentialVault } from '../src/core/credential-vault';
 import { globalAdapterRegistry } from '../src/adapters/adapter-registry';
 import { getPurposePreset } from '../src/core/presets';
 import { LocalDatabase } from '../src/core/db';
+import { CacheScanner } from '../src/core/cache-scanner';
 import { InstallPlan, PresetIntent, RuntimeId } from '../src/types';
 
 let mainWindow: BrowserWindow | null = null;
@@ -21,7 +22,7 @@ async function createWindow() {
     minHeight: 700,
     frame: true,
     titleBarStyle: 'default',
-    title: 'Hugging Face Model Browser & Local Inference Hub',
+    title: 'HF Browser',
     backgroundColor: '#0f172a', // Deep dark slate background
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -55,6 +56,10 @@ ipcMain.handle('hardware:getProfile', async () => {
   return detectHardware();
 });
 
+ipcMain.handle('hardware:getLiveVramUsage', async (_event, gpuIndex?: number) => {
+  return getLiveVramUsage(gpuIndex || 0);
+});
+
 ipcMain.handle('hf:search', async (_event, query: string, options: any) => {
   const token = await CredentialVault.getHfToken();
   return HuggingFaceClient.searchModels({
@@ -71,6 +76,20 @@ ipcMain.handle('hf:getModelDetails', async (_event, modelId: string) => {
 
 ipcMain.handle('hf:resolveArtifacts', async (_event, model: any) => {
   return HuggingFaceClient.resolveArtifacts(model);
+});
+
+ipcMain.handle('hf:getModelReadme', async (_event, modelId: string) => {
+  const token = await CredentialVault.getHfToken();
+  return HuggingFaceClient.getModelReadme(modelId, token || undefined);
+});
+
+ipcMain.handle('hf:getGenerationConfig', async (_event, modelId: string) => {
+  const token = await CredentialVault.getHfToken();
+  return HuggingFaceClient.getModelGenerationConfig(modelId, token || undefined);
+});
+
+ipcMain.handle('cache:scanLocalModels', async () => {
+  return CacheScanner.scanLocalModels();
 });
 
 ipcMain.handle('vault:saveToken', async (_event, token: string, accountName?: string) => {

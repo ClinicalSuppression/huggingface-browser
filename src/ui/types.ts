@@ -11,7 +11,7 @@ import type {
   PurposePreset,
 } from '../types';
 
-export type NavTabId = 'discover' | 'installed' | 'runtimes' | 'hardware' | 'settings';
+export type NavTabId = 'discover' | 'installed' | 'runtimes' | 'hardware' | 'vault' | 'settings';
 
 export type ModelFilterChip = 'all' | 'gguf' | 'safetensors' | 'reasoning';
 
@@ -35,18 +35,73 @@ export interface DetectedRuntime {
   readonly version?: string;
 }
 
+export interface InstalledModelFile {
+  readonly name: string;
+  readonly sizeBytes: number;
+  readonly role?: 'weights' | 'mmproj' | 'mtp' | 'adapter' | 'other';
+}
+
 export interface InstalledModelItem {
   readonly runtimeId: RuntimeId;
   readonly id: string;
   readonly sizeBytes: number;
   readonly modifiedAtIso: string;
+  readonly files?: InstalledModelFile[];
+  readonly checksumStatus?: 'verified' | 'mismatch' | 'unknown';
+}
+
+export interface OllamaRuntimeOptions {
+  flashAttention: boolean;
+  numParallel: number;
+  keepAlive: '5m' | '30m' | '24h' | '-1';
+  numCtx: number;
+}
+
+export interface LlamaCppRuntimeOptions {
+  nGpuLayers: number;
+  ctxSize: number;
+  flashAttn: boolean;
+  threads: number;
+  batchSize: number;
+}
+
+export interface XollamaRuntimeOptions {
+  thinkBudget: number;
+  computeBackend: 'Vulkan' | 'CUDA' | 'AVX2' | 'AVX-512';
+}
+
+export interface VllmRuntimeOptions {
+  gpuMemoryUtilization: number;
+  maxModelLen: number;
+}
+
+export interface RuntimeOptionsConfig {
+  ollama: OllamaRuntimeOptions;
+  llamacpp: LlamaCppRuntimeOptions;
+  xollama: XollamaRuntimeOptions;
+  vllm: VllmRuntimeOptions;
+}
+
+export interface AppSettings {
+  activeGpuId: string;
+  safeVramHeadroomMb: number;
+  defaultPresetIntent: PresetIntent;
+  modelStoragePath: string;
+  localCacheScanPaths: string[];
+  hardwarePollingRateMs: 1000 | 2000 | 5000 | 0;
+  telemetryOptIn: boolean;
+  runtimeOptions: RuntimeOptionsConfig;
 }
 
 export interface IElectronAPI {
   getHardwareProfile(): Promise<HardwareProfile>;
+  getLiveVramUsage(gpuIndex?: number): Promise<{ totalBytes: number; usedBytes: number; freeBytes: number }>;
   searchModels(query: string, options?: Record<string, unknown>): Promise<HfModelSearchResult[]>;
   getModelDetails(modelId: string): Promise<HfModelSearchResult>;
   resolveArtifacts(model: HfModelSearchResult): Promise<unknown>;
+  getModelReadme(modelId: string): Promise<string | null>;
+  getGenerationConfig(modelId: string): Promise<{ temperature?: number; top_p?: number; repetition_penalty?: number; top_k?: number } | null>;
+  scanLocalModels(): Promise<unknown[]>;
   saveToken(token: string, accountName?: string): Promise<boolean>;
   getToken(accountName?: string): Promise<string | null>;
   removeToken(accountName?: string): Promise<boolean>;

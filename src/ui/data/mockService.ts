@@ -11,20 +11,20 @@ export const MOCK_HARDWARE_PROFILE: HardwareProfile = {
   gpus: [
     {
       id: 'gpu-0',
-      name: 'NVIDIA GeForce RTX 4080 SUPER',
-      vendor: 'nvidia',
+      name: 'AMD Radeon RX 7800 XT',
+      vendor: 'amd',
       vramTotalBytes: 16 * 1024 * 1024 * 1024,
-      vramFreeBytes: 14.5 * 1024 * 1024 * 1024,
-      driverVersion: '566.36',
-      computeCapability: '8.9',
+      vramFreeBytes: 14.8 * 1024 * 1024 * 1024,
+      driverVersion: '24.12.1',
+      computeCapability: 'gfx1101 (RDNA 3)',
     },
   ],
   systemRamTotalBytes: 64 * 1024 * 1024 * 1024,
-  systemRamAvailableBytes: 42.4 * 1024 * 1024 * 1024,
+  systemRamAvailableBytes: 44.2 * 1024 * 1024 * 1024,
   cpuArchitecture: 'x86_64',
-  cpuLogicalCores: 24,
+  cpuLogicalCores: 16,
   supportsAvx2: true,
-  supportsAvx512: false,
+  supportsAvx512: true,
   capturedAtIso: new Date().toISOString(),
 };
 
@@ -187,21 +187,55 @@ export const MOCK_MODELS: HfModelSearchResult[] = [
 export const MOCK_INSTALLED_MODELS: InstalledModelItem[] = [
   {
     runtimeId: 'ollama',
-    id: 'deepseek-r1:14b-q4_k_m',
-    sizeBytes: 8_990_000_000,
+    id: 'hf.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B:Q4_K_M',
+    sizeBytes: 9_190_000_000,
     modifiedAtIso: new Date(Date.now() - 86400000).toISOString(),
+    checksumStatus: 'verified',
+    files: [
+      {
+        name: 'DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf',
+        sizeBytes: 8_990_000_000,
+        role: 'weights',
+      },
+      {
+        name: 'deepseek-r1-mtp-head-f16.gguf',
+        sizeBytes: 200_000_000,
+        role: 'mtp',
+      },
+    ],
   },
   {
     runtimeId: 'ollama',
-    id: 'qwen2.5-coder:14b',
-    sizeBytes: 8_980_000_000,
-    modifiedAtIso: new Date(Date.now() - 4 * 86400000).toISOString(),
+    id: 'hf.co/google/gemma-3-12b-it:Q4_K_M',
+    sizeBytes: 8_420_000_000,
+    modifiedAtIso: new Date(Date.now() - 3 * 86400000).toISOString(),
+    checksumStatus: 'verified',
+    files: [
+      {
+        name: 'gemma-3-12b-it-Q4_K_M.gguf',
+        sizeBytes: 7_580_000_000,
+        role: 'weights',
+      },
+      {
+        name: 'mmproj-gemma-3-12b-it-f16.gguf',
+        sizeBytes: 840_000_000,
+        role: 'mmproj',
+      },
+    ],
   },
   {
     runtimeId: 'llamacpp',
-    id: 'Meta-Llama-3.1-8B-Instruct-Q5_K_M.gguf',
+    id: 'hf.co/bartowski/Llama-3.1-8B-Instruct-GGUF:Q5_K_M',
     sizeBytes: 5_730_000_000,
     modifiedAtIso: new Date(Date.now() - 9 * 86400000).toISOString(),
+    checksumStatus: 'verified',
+    files: [
+      {
+        name: 'Meta-Llama-3.1-8B-Instruct-Q5_K_M.gguf',
+        sizeBytes: 5_730_000_000,
+        role: 'weights',
+      },
+    ],
   },
 ];
 
@@ -339,6 +373,36 @@ export const bridgeService = {
       rawOutputSample:
         'Ready. Local inference verified on Windows 11 GPU backend with zero quantization drift.',
     };
+  },
+
+  async getLiveVramUsage(gpuIndex?: number): Promise<{ totalBytes: number; usedBytes: number; freeBytes: number }> {
+    if (window.electronAPI) {
+      return window.electronAPI.getLiveVramUsage(gpuIndex);
+    }
+    const total = 16 * 1024 * 1024 * 1024;
+    const used = 2.5 * 1024 * 1024 * 1024;
+    return { totalBytes: total, usedBytes: used, freeBytes: total - used };
+  },
+
+  async getModelReadme(modelId: string): Promise<string | null> {
+    if (window.electronAPI) {
+      return window.electronAPI.getModelReadme(modelId);
+    }
+    return `# ${modelId}\n\nOfficial Hugging Face Model Card documentation and model specifications.\n\n### Model Architecture\n- Architecture: Transformer / CausalLM\n- Context Window: Up to 128K\n- Quantization: GGUF / SafeTensors\n\n### Usage\nReady for local deployment into Ollama or llama.cpp.`;
+  },
+
+  async getModelGenerationConfig(modelId: string): Promise<{ temperature?: number; top_p?: number; repetition_penalty?: number; top_k?: number } | null> {
+    if (window.electronAPI) {
+      return window.electronAPI.getGenerationConfig(modelId);
+    }
+    return { temperature: 0.7, top_p: 0.9, repetition_penalty: 1.1, top_k: 40 };
+  },
+
+  async scanLocalModels(): Promise<any[]> {
+    if (window.electronAPI) {
+      return window.electronAPI.scanLocalModels();
+    }
+    return [];
   },
 
   async getToken(): Promise<string | null> {

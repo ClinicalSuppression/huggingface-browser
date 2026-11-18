@@ -14,6 +14,8 @@ interface DiscoveryViewProps {
   models: HfModelSearchResult[];
   isLoading: boolean;
   hardware: HardwareProfile | null;
+  activeGpuId?: string;
+  safeHeadroomMb?: number;
   onSelectModel: (model: HfModelSearchResult) => void;
   searchInputRef: React.RefObject<HTMLInputElement | null>;
 }
@@ -42,17 +44,19 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
   models,
   isLoading,
   hardware,
+  activeGpuId,
+  safeHeadroomMb,
   onSelectModel,
   searchInputRef,
 }) => {
   return (
-    <section aria-label="Discover Hugging Face Models" className="flex h-full flex-col">
+    <section aria-label="Search HF" className="flex h-full flex-col">
       {/* Top Header & Search Bar */}
       <header className="border-b border-white/[0.08] bg-[#090d16]/75 px-6 py-5 backdrop-blur-md">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-white">
-              Discover Models
+              Search HF
             </h1>
             <p className="mt-0.5 text-xs text-slate-400">
               Browse Hugging Face Hub with real-time Windows hardware fit &amp; one-click local deployment
@@ -156,16 +160,19 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
       {/* Model Grid Content */}
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {isLoading ? (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3" aria-busy="true">
-            {Array.from({ length: 6 }).map((_, idx) => (
+          <div
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5"
+            aria-busy="true"
+          >
+            {Array.from({ length: 10 }).map((_, idx) => (
               <div
                 key={idx}
-                className="fluent-card h-48 animate-pulse rounded-xl p-4"
+                className="fluent-card h-40 animate-pulse rounded-xl p-3"
               >
-                <div className="h-3 w-24 rounded bg-white/[0.07]" />
-                <div className="mt-3 h-5 w-3/4 rounded bg-white/[0.09]" />
-                <div className="mt-3 h-3 w-full rounded bg-white/[0.05]" />
-                <div className="mt-2 h-3 w-2/3 rounded bg-white/[0.05]" />
+                <div className="h-3 w-20 rounded bg-white/[0.07]" />
+                <div className="mt-2.5 h-4 w-3/4 rounded bg-white/[0.09]" />
+                <div className="mt-2.5 h-3 w-full rounded bg-white/[0.05]" />
+                <div className="mt-1.5 h-3 w-2/3 rounded bg-white/[0.05]" />
               </div>
             ))}
           </div>
@@ -188,12 +195,14 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
             {models.map((model) => (
               <ModelCard
                 key={model.id}
                 model={model}
                 hardware={hardware}
+                activeGpuId={activeGpuId}
+                safeHeadroomMb={safeHeadroomMb}
                 onSelect={onSelectModel}
               />
             ))}

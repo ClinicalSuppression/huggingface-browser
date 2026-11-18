@@ -53,13 +53,13 @@ export const SettingsVaultView: React.FC = () => {
   };
 
   return (
-    <section aria-label="Settings and Hugging Face Token Vault" className="flex h-full flex-col">
+    <section aria-label="HF Access Token" className="flex h-full flex-col">
       <header className="border-b border-white/[0.08] bg-[#090d16]/75 px-6 py-5">
         <h1 className="text-xl font-semibold tracking-tight text-white">
-          Settings &amp; HF Token Vault
+          HF Access Token
         </h1>
         <p className="mt-0.5 text-xs text-slate-400">
-          Manage your Hugging Face access token for gated models (Llama, Gemma) via encrypted OS storage
+          Manage your Hugging Face access token for gated models (Llama, Gemma) via salted AES-256-GCM &amp; OS storage
         </p>
       </header>
 

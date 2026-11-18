@@ -41,7 +41,7 @@ export function evaluateHardwareFit(
 ): HardwareFitResult {
   const weightBytes = calculateWeightMemoryBytes(modelParamsBillions, bitsPerWeight);
   const kvBytes = calculateKvCacheMemoryBytes(layers, kvHeads, headDim, contextTokens);
-  const cudaOverheadBytes = 1_073_741_824; // ~1.0 GB base overhead
+  const cudaOverheadBytes = 512 * 1024 * 1024; // 512 MB safe VRAM headroom
 
   const totalFreeVram = hw.gpus.reduce((acc, gpu) => acc + gpu.vramFreeBytes, 0);
   const totalFreeRam = hw.systemRamAvailableBytes;
@@ -89,5 +89,45 @@ export function evaluateHardwareFit(
     estimatedSystemRamBytes,
     maxOffloadLayers: 0,
     totalLayers: layers,
+  };
+}
+
+export function calculateBestFitContext(
+  paramsBillions: number,
+  bitsPerWeight: number,
+  layers: number,
+  kvHeads: number,
+  headDim: number,
+  freeVramBytes: number,
+  headroomBytes: number = 512 * 1024 * 1024, // 512 MB safe headroom
+  bytesPerCacheElement: number = 2,
+  maxArchContext: number = 131072
+): { bestFitTokens: number; bestFitLabel: string; fitsGpu: boolean } {
+  const weightBytes = calculateWeightMemoryBytes(paramsBillions, bitsPerWeight, 1.15);
+  const availableVramForKv = freeVramBytes - headroomBytes - weightBytes;
+
+  const bytesPerToken = calculateKvCacheMemoryBytes(layers, kvHeads, headDim, 1, bytesPerCacheElement);
+
+  if (availableVramForKv <= 0 || bytesPerToken <= 0) {
+    return { bestFitTokens: 0, bestFitLabel: '0K', fitsGpu: false };
+  }
+
+  const maxTokensRaw = Math.floor(availableVramForKv / bytesPerToken);
+  const standardSteps = [2048, 4096, 8192, 16384, 32768, 65536, 131072];
+
+  let bestFitTokens = 0;
+  for (const step of standardSteps) {
+    if (step <= maxTokensRaw && step <= maxArchContext) {
+      bestFitTokens = step;
+    }
+  }
+
+  const fitsGpu = bestFitTokens >= 2048 && availableVramForKv >= calculateKvCacheMemoryBytes(layers, kvHeads, headDim, bestFitTokens, bytesPerCacheElement);
+  const bestFitLabel = bestFitTokens >= 1024 ? `${Math.round(bestFitTokens / 1024)}K` : `${bestFitTokens}`;
+
+  return {
+    bestFitTokens,
+    bestFitLabel,
+    fitsGpu,
   };
 }
