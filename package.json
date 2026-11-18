@@ -1,7 +1,7 @@
 {
-  "name": "ollama-hf-browser",
-  "version": "1.0.0",
-  "description": "",
+  "name": "huggingface-browser",
+  "version": "0.1.0",
+  "description": "Windows 11 desktop model browser and local serving orchestrator for Hugging Face, Ollama, llama.cpp, xollama, and vLLM.",
   "main": "dist-electron/electron/main.js",
   "directories": {
     "doc": "docs"
@@ -11,11 +11,23 @@
     "build": "vite build && tsc -p tsconfig.electron.json",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "start": "electron ."
+    "start": "electron .",
+    "package": "electron-builder"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "huggingface",
+    "ollama",
+    "llama.cpp",
+    "xollama",
+    "vllm",
+    "gguf",
+    "safetensors",
+    "ai",
+    "llm",
+    "windows-11"
+  ],
+  "author": "ClinicalSuppression",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "commonjs",
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
