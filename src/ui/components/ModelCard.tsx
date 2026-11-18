@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Download, Heart, Lock, Cpu, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { HardwareProfile, HfModelSearchResult } from '../../types';
 import { detectReasoningRequirements } from '../../core/presets';
+import { HfTagPill } from './HfTagPill';
 import {
   calculateBestFitContext,
   formatCompactNumber,
@@ -237,6 +238,20 @@ export const ModelCard: React.FC<ModelCardProps> = ({
           <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-400">
             {model.description}
           </p>
+        )}
+
+        {/* Hugging Face Tags Row (Mirroring HF.co) */}
+        {model.tags && model.tags.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1 overflow-hidden max-h-12">
+            {model.tags.slice(0, 4).map((t) => (
+              <HfTagPill key={t} tag={t} />
+            ))}
+            {model.tags.length > 4 && (
+              <span className="rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-slate-400">
+                +{model.tags.length - 4}
+              </span>
+            )}
+          </div>
         )}
       </div>
 

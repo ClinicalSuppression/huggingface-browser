@@ -46,6 +46,7 @@ import {
   formatContextLength,
   formatPipelineTag,
 } from '../utils/format';
+import { HfTagPill } from './HfTagPill';
 import { bridgeService } from '../data/mockService';
 
 interface ModelDetailDrawerProps {
@@ -708,6 +709,15 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
             {formatContextLength(maxContextTokens)}
             {isRopeScaled ? ' (RoPE Scaled)' : ''}
           </p>
+
+          {/* Hugging Face Tags Strip matching HF.co */}
+          {model.tags && model.tags.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 max-h-16 overflow-y-auto">
+              {model.tags.map((t) => (
+                <HfTagPill key={t} tag={t} />
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

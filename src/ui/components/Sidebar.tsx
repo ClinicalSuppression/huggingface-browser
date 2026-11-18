@@ -7,7 +7,6 @@ import {
   KeyRound,
   Settings,
   Cpu,
-  Sparkles,
 } from 'lucide-react';
 import { HardwareProfile } from '../../types';
 import { DetectedRuntime, NavTabId } from '../types';
