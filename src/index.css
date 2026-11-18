@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --fluent-bg-base: #090d16;
+    --fluent-bg-layer: #0f172a;
+    --fluent-bg-card: rgba(15, 23, 42, 0.72);
+    --fluent-bg-card-hover: rgba(30, 41, 59, 0.78);
+    --fluent-border-subtle: rgba(255, 255, 255, 0.08);
+    --fluent-border-strong: rgba(255, 255, 255, 0.14);
+    --fluent-accent: #0078d4;
+    --fluent-accent-light: #38bdf8;
+    --fluent-reasoning: #a855f7;
+    --fluent-reasoning-light: #c084fc;
+    --fluent-font-sans: 'Segoe UI Variable', 'Segoe UI', 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --fluent-font-mono: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    font-family: var(--fluent-font-sans);
+    background-color: var(--fluent-bg-base);
+    color: #f1f5f9;
+  }
+
+  /* Accessible focus outline matching Windows 11 Fluent focus ring */
+  *:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+  }
+}
+
+/* Fluent Surface Utilities */
+.fluent-mica {
+  background: linear-gradient(160deg, rgba(15, 23, 42, 0.92) 0%, rgba(9, 13, 22, 0.97) 100%);
+  backdrop-filter: blur(24px) saturate(140%);
+}
+
+.fluent-acrylic {
+  background: rgba(15, 23, 42, 0.84);
+  backdrop-filter: blur(28px) saturate(160%);
+}
+
+.fluent-card {
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.42) 0%, rgba(15, 23, 42, 0.65) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
+    0 4px 20px -4px rgba(0, 0, 0, 0.45);
+}
+
+.fluent-card-interactive {
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.fluent-card-interactive:hover {
+  border-color: rgba(56, 189, 248, 0.32);
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.62) 0%, rgba(15, 23, 42, 0.82) 100%);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    0 10px 28px -6px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(56, 189, 248, 0.12);
+}
+
+/* Custom Range Slider (Fluent Style) */
+input[type='range'].fluent-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+
+input[type='range'].fluent-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #38bdf8;
+  border: 3px solid #0f172a;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.5), 0 2px 6px rgba(0, 0, 0, 0.5);
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+
+input[type='range'].fluent-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+  background: #7dd3fc;
+}
+
+input[type='range'].fluent-slider-purple::-webkit-slider-thumb {
+  background: #c084fc;
+  box-shadow: 0 0 0 1px rgba(192, 132, 252, 0.55), 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+input[type='range'].fluent-slider-purple::-webkit-slider-thumb:hover {
+  background: #d8b4fe;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.22);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
