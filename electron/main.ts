@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, crashReporter, ipcMain, shell } from 'electron';
 import path from 'path';
 import { detectHardware, getLiveVramUsage } from '../src/core/hardware';
 import { HuggingFaceClient } from '../src/core/hf-client';
@@ -285,8 +285,13 @@ ipcMain.handle('jobs:list', async () => {
   return LocalDatabase.getJobs();
 });
 
-// Suppress unconfigured Chromium crashpad registration log on Windows
+// Configure local offline Crashpad handler and suppress registration warnings
+crashReporter.start({
+  submitURL: '',
+  uploadToServer: false,
+});
 app.commandLine.appendSwitch('disable-crash-reporter');
+app.commandLine.appendSwitch('disable-features', 'Crashpad');
 
 app.whenReady().then(createWindow);
 
