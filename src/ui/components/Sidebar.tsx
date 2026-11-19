@@ -24,6 +24,7 @@ interface SidebarProps {
 interface NavItemConfig {
   id: NavTabId;
   label: string;
+  shortLabel: string;
   icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
   badge?: string | number;
 }
@@ -39,22 +40,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const healthyRuntimes = runtimes.filter((r) => r.isHealthy).length;
 
   const navItems: NavItemConfig[] = [
-    { id: 'discover', label: 'Search HF', icon: Search },
+    { id: 'discover', label: 'Search HF', shortLabel: 'Search', icon: Search },
     {
       id: 'installed',
       label: 'Installed Models',
+      shortLabel: 'Models',
       icon: HardDrive,
       badge: installedCount > 0 ? installedCount : undefined,
     },
     {
       id: 'runtimes',
       label: 'Runtime Manager',
+      shortLabel: 'Runtimes',
       icon: Server,
       badge: healthyRuntimes > 0 ? `${healthyRuntimes}/${runtimes.length}` : undefined,
     },
-    { id: 'hardware', label: 'Hardware Monitor', icon: Activity },
-    { id: 'vault', label: 'HF Access Token', icon: KeyRound },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'hardware', label: 'Hardware Monitor', shortLabel: 'Hardware', icon: Activity },
+    { id: 'vault', label: 'HF Access Token', shortLabel: 'Token', icon: KeyRound },
+    { id: 'settings', label: 'Settings', shortLabel: 'Settings', icon: Settings },
   ];
 
   const primaryGpu =
@@ -69,10 +72,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       aria-label="Primary navigation"
-      className="fluent-mica flex h-full w-52 shrink-0 flex-col border-r border-white/[0.08] select-none"
+      className="fluent-mica flex h-full w-52 shrink-0 flex-col border-r border-white/[0.08] select-none max-[640px]:h-auto max-[640px]:w-full max-[640px]:shrink-0 max-[640px]:flex-row max-[640px]:border-r-0 max-[640px]:border-t max-[640px]:border-white/[0.08]"
     >
       {/* App Header */}
-      <div className="flex items-center gap-3 px-4 pt-5 pb-4">
+      <div className="flex items-center gap-3 px-4 pt-5 pb-4 max-[640px]:hidden">
         <img
           src="/icon.png"
           alt="HF Browser Icon"
@@ -86,7 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation Items */}
-      <nav className="flex-1 space-y-1 px-2.5 py-2" role="navigation" aria-label="Main sections">
+      <nav className="flex-1 space-y-1 px-2.5 py-2 max-[640px]:flex max-[640px]:justify-around max-[640px]:gap-1 max-[640px]:overflow-x-auto max-[640px]:px-1 max-[640px]:py-1" role="navigation" aria-label="Main sections">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -96,7 +99,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               type="button"
               onClick={() => onSelectTab(item.id)}
               aria-current={isActive ? 'page' : undefined}
-              className={`group relative flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-150 ${
+              aria-label={item.label}
+              className={`group relative flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-150 max-[640px]:w-auto max-[640px]:min-w-0 max-[640px]:flex-col max-[640px]:gap-1 max-[640px]:px-2 max-[640px]:py-1.5 max-[640px]:text-[10px] ${
                 isActive
                   ? 'bg-white/[0.09] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
                   : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'
@@ -117,8 +121,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     isActive ? 'text-[#38bdf8]' : 'text-slate-400 group-hover:text-slate-200'
                   }`}
                 />
-                <span className="truncate">{item.label}</span>
+                <span className="truncate max-[640px]:hidden">{item.label}</span>
               </span>
+              <span aria-hidden="true" className="hidden max-[640px]:block whitespace-nowrap leading-tight">{item.shortLabel}</span>
 
               {item.badge !== undefined && (
                 <span
@@ -137,7 +142,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* Bottom Live Hardware & Vault Telemetry Card */}
-      <div className="p-3">
+      <div className="p-3 max-[640px]:hidden">
         <button
           type="button"
           onClick={() => onSelectTab('hardware')}

@@ -221,6 +221,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   const presetTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const drawerRef = useRef<HTMLElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const initialFocusRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const webviewRef = useRef<any>(null);
 
@@ -518,7 +519,15 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
         }
       });
 
-    const timer = setTimeout(() => closeBtnRef.current?.focus(), 40);
+    const timer = setTimeout(() => {
+      if (!initialFocusRef.current) {
+        previousFocusRef.current = document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+        initialFocusRef.current = true;
+      }
+      closeBtnRef.current?.focus();
+    }, 40);
     return () => {
       controller.abort();
       clearTimeout(timer);
@@ -528,9 +537,6 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   // Escape key closes drawer
   useEffect(() => {
     if (!model) return;
-    previousFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -564,9 +570,24 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [model, onClose]);
 
+  // Restore focus when the drawer closes, not only when its component unmounts.
+  // The app may keep this component mounted while switching the selected model,
+  // and the parent's inline onClose callback changes identity on every render.
+  const wasOpenRef = useRef(Boolean(model));
+  const previousFocusRefForCleanup = previousFocusRef;
+  useEffect(() => {
+    const wasOpen = wasOpenRef.current;
+    if (wasOpen && !model) {
+      const previousFocus = previousFocusRef.current;
+      if (previousFocus?.isConnected) previousFocus.focus();
+    }
+    if (!model) initialFocusRef.current = false;
+    wasOpenRef.current = Boolean(model);
+  }, [model]);
+
   useEffect(() => {
     return () => {
-      const previousFocus = previousFocusRef.current;
+      const previousFocus = previousFocusRefForCleanup.current;
       if (previousFocus?.isConnected) previousFocus.focus();
     };
   }, []);

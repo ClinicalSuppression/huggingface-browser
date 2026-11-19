@@ -194,7 +194,7 @@ export function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#090d16] text-slate-100">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#090d16] text-slate-100 max-[640px]:flex-col-reverse">
       <Sidebar
         activeTab={activeTab}
         onSelectTab={setActiveTab}

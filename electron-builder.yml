@@ -18,5 +18,6 @@ win:
   icon: assets/icon.ico
 nsis:
   artifactName: ${productName}-${version}-Setup-${arch}.${ext}
+  include: build/installer.nsh
 portable:
   artifactName: ${productName}-${version}-Portable-${arch}.${ext}

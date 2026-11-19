@@ -142,7 +142,7 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
   return (
     <section aria-label="Search HF" className="flex h-full flex-col">
       {/* Top Header & Search Bar */}
-      <header className="border-b border-white/[0.08] bg-[#090d16]/75 px-6 py-4 backdrop-blur-md">
+      <header className="border-b border-white/[0.08] bg-[#090d16]/75 px-6 py-4 backdrop-blur-md max-[640px]:px-3 max-[640px]:py-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-white">
@@ -342,10 +342,10 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {isLoading ? 'Loading models.' : `${filteredModels.length} matching model${filteredModels.length === 1 ? '' : 's'} found.`}
       </div>
-      <div className="flex-1 overflow-y-auto px-6 py-5">
+      <div className="min-w-0 flex-1 overflow-y-auto px-6 py-5 max-[640px]:px-3 max-[640px]:py-3">
         {isLoading ? (
           <div
-            className="grid grid-cols-[repeat(auto-fill,minmax(235px,1fr))] gap-3"
+            className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,235px),1fr))] gap-3"
             aria-busy="true"
           >
             {Array.from({ length: 10 }).map((_, idx) => (
@@ -376,7 +376,7 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(235px,1fr))] gap-3">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,235px),1fr))] gap-3">
             {filteredModels.map((model) => (
               <ModelCard
                 key={model.id}
