@@ -28,6 +28,7 @@ export class HuggingFaceClient {
     params.append('limit', (options.limit || 30).toString());
     params.append('expand[]', 'siblings');
     params.append('expand[]', 'cardData');
+    params.append('expand[]', 'tags');
 
     const path = `/api/models?${params.toString()}`;
     return this.request<HfModelSearchResult[]>(path, options.token);
@@ -37,7 +38,7 @@ export class HuggingFaceClient {
    * Get complete model details including all sibling files
    */
   public static async getModelDetails(modelId: string, token?: string): Promise<HfModelSearchResult> {
-    const path = `/api/models/${modelId}?expand[]=siblings&expand[]=cardData`;
+    const path = `/api/models/${modelId}?expand[]=siblings&expand[]=cardData&expand[]=tags`;
     return this.request<HfModelSearchResult>(path, token);
   }
 
