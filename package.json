@@ -1,6 +1,6 @@
 {
   "name": "huggingface-browser",
-  "version": "0.1.2-rc.1",
+  "version": "0.1.2",
   "description": "Windows 11 desktop model browser and local serving orchestrator for Hugging Face, Ollama, llama.cpp, xollama, and vLLM.",
   "main": "dist-electron/electron/main.js",
   "directories": {
