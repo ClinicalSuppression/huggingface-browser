@@ -55,7 +55,13 @@ export class DownloadManager {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           // Never forward HF token to non-HF redirect host
           const redirectUrl = new URL(res.headers.location, options.url);
-          const isHfHost = redirectUrl.hostname.endsWith('huggingface.co') || redirectUrl.hostname.endsWith('hf.co');
+          const hostname = redirectUrl.hostname.toLowerCase();
+          const isHfHost = redirectUrl.protocol === 'https:' && (
+            hostname === 'huggingface.co' ||
+            hostname.endsWith('.huggingface.co') ||
+            hostname === 'hf.co' ||
+            hostname.endsWith('.hf.co')
+          );
           return this.downloadFile({
             ...options,
             url: redirectUrl.toString(),
@@ -116,24 +122,41 @@ export class DownloadManager {
 
         writeStream.on('finish', () => {
           writeStream.close();
+          void (async () => {
+            try {
+              const stats = fs.statSync(tempPath);
+              if (options.expectedSizeBytes !== undefined && stats.size !== options.expectedSizeBytes) {
+                throw new Error(`Downloaded size mismatch: expected ${options.expectedSizeBytes} bytes, received ${stats.size}`);
+              }
 
-          let verifiedSha256 = false;
-          if (options.expectedSha256) {
-            const fileData = fs.readFileSync(tempPath);
-            const calculatedSha = crypto.createHash('sha256').update(fileData).digest('hex');
-            verifiedSha256 = calculatedSha.toLowerCase() === options.expectedSha256.toLowerCase();
-          }
+              let verifiedSha256 = false;
+              if (options.expectedSha256) {
+                const hash = crypto.createHash('sha256');
+                await new Promise<void>((resolveHash, rejectHash) => {
+                  const input = fs.createReadStream(tempPath);
+                  input.on('data', (chunk: Buffer) => hash.update(chunk));
+                  input.on('error', rejectHash);
+                  input.on('end', resolveHash);
+                });
+                const calculatedSha = hash.digest('hex');
+                verifiedSha256 = calculatedSha.toLowerCase() === options.expectedSha256.toLowerCase();
+                if (!verifiedSha256) {
+                  throw new Error(`Downloaded SHA-256 mismatch: expected ${options.expectedSha256}, received ${calculatedSha}`);
+                }
+              }
 
-          // Atomic rename from .download to final destination
-          if (fs.existsSync(options.destinationPath)) {
-            fs.unlinkSync(options.destinationPath);
-          }
-          fs.renameSync(tempPath, options.destinationPath);
-
-          resolve({
-            finalPath: options.destinationPath,
-            verifiedSha256,
-          });
+              // Promote only after validation; remove an old target only once validation succeeds.
+              if (fs.existsSync(options.destinationPath)) {
+                fs.unlinkSync(options.destinationPath);
+              }
+              fs.renameSync(tempPath, options.destinationPath);
+              resolve({ finalPath: options.destinationPath, verifiedSha256 });
+            } catch (err) {
+              // Invalid or failed downloads are discarded; an existing destination remains untouched.
+              try { fs.unlinkSync(tempPath); } catch { /* already removed */ }
+              reject(err);
+            }
+          })();
         });
 
         writeStream.on('error', (err) => {

@@ -92,6 +92,14 @@ export interface InstallPlan {
   readonly createdAtIso: string;
 }
 
+export type InstallPlanId = string;
+export interface InstalledModel {
+  readonly runtimeId: RuntimeId;
+  readonly id: string;
+  readonly sizeBytes: number;
+  readonly modifiedAtIso: string;
+}
+
 export interface InstallProgress {
   readonly planId: string;
   readonly currentStepIndex: number;
@@ -101,6 +109,10 @@ export interface InstallProgress {
   readonly bytesTotal: number;
   readonly percentComplete: number;
   readonly downloadSpeedBytesPerSec: number;
+}
+
+export interface InstallExecutionContext {
+  readonly downloadToken?: string;
 }
 
 export interface VerificationResult {
@@ -121,7 +133,12 @@ export interface IRuntimeAdapter {
   listInstalledModels(): Promise<Array<{ readonly id: string; readonly sizeBytes: number; readonly modifiedAtIso: string }>>;
   evaluateCompatibility(artifact: ArtifactFileTarget[], hw: HardwareProfile): Promise<CompatibilityReport>;
   createInstallPlan(artifact: ArtifactFileTarget[], hw: HardwareProfile, customOptions?: Record<string, unknown>): Promise<InstallPlan>;
-  executeInstall(plan: InstallPlan, onProgress: (p: InstallProgress) => void, cancelSignal: AbortSignal): Promise<boolean>;
+  executeInstall(
+    plan: InstallPlan,
+    onProgress: (p: InstallProgress) => void,
+    cancelSignal: AbortSignal,
+    context?: InstallExecutionContext
+  ): Promise<boolean>;
   verifyInstall(plan: InstallPlan): Promise<VerificationResult>;
   uninstallModel(modelTag: string): Promise<boolean>;
 }

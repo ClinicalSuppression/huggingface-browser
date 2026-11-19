@@ -168,11 +168,11 @@ export interface IElectronAPI {
   ): Promise<CompatibilityReport>;
   createInstallPlan(
     runtimeId: RuntimeId,
-    artifacts: ArtifactFileTarget[],
-    hw: HardwareProfile,
+    modelId: string,
+    selectedFilename: string | undefined,
     options?: Record<string, unknown>
   ): Promise<InstallPlan>;
-  startInstall(plan: InstallPlan): Promise<{ success: boolean; error?: string }>;
+  startInstall(planId: string): Promise<{ success: boolean; error?: string }>;
   cancelInstall(planId: string): Promise<boolean>;
   onInstallProgress(callback: (progress: InstallProgress) => void): () => void;
   runSmokeTest(runtimeId: RuntimeId, modelTag: string): Promise<VerificationResult>;

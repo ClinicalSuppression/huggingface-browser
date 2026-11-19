@@ -279,7 +279,9 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployProgress, setDeployProgress] = useState<InstallProgress | null>(null);
   const [deployDone, setDeployDone] = useState(false);
+  const [deployCancelled, setDeployCancelled] = useState(false);
   const [deployError, setDeployError] = useState<string | null>(null);
+  const [cancelRequested, setCancelRequested] = useState(false);
 
   const [isTesting, setIsTesting] = useState(false);
   const [smokeResult, setSmokeResult] = useState<VerificationResult | null>(null);
@@ -631,33 +633,44 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   };
 
   const handleDeploy = async () => {
-    if (isDeploying) return;
+    if (isDeploying || selectedRuntime !== 'ollama' || selectedQuant.format !== 'gguf') return;
     setIsDeploying(true);
+    setDeployProgress(null);
     setDeployDone(false);
+    setDeployCancelled(false);
     setDeployError(null);
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    const result = await bridgeService.simulateOrRunDeploy(
-      selectedRuntime,
-      model.id,
-      selectedQuant.sizeBytes,
-      (prog) => setDeployProgress(prog),
-      controller.signal
-    );
-
-    setIsDeploying(false);
-    if (result.success) {
-      setDeployDone(true);
-      onDeploySuccess?.(selectedRuntime, shortModelTag, selectedQuant.sizeBytes);
-    } else {
-      setDeployError(result.error || 'Deployment failed');
+    try {
+      const result = await bridgeService.simulateOrRunDeploy(
+        selectedRuntime,
+        model.id,
+        selectedQuant.sizeBytes,
+        (prog) => setDeployProgress(prog),
+        controller.signal,
+        selectedQuant.filename
+      );
+      if (result.success) {
+        setDeployDone(true);
+        onDeploySuccess?.(selectedRuntime, shortModelTag, selectedQuant.sizeBytes);
+      } else if (controller.signal.aborted) {
+        setDeployCancelled(true);
+      } else {
+        setDeployError(result.error || 'Deployment failed');
+      }
+    } catch (error) {
+      setDeployError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsDeploying(false);
+      setCancelRequested(false);
+      abortControllerRef.current = null;
     }
   };
 
   const handleCancelDeploy = () => {
+    setCancelRequested(true);
     abortControllerRef.current?.abort();
-    setIsDeploying(false);
   };
 
   const handleSmokeTest = async () => {
@@ -1386,15 +1399,21 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
             </section>
 
             {/* Deployment Progress & Test Results */}
-            {(isDeploying || deployProgress || deployDone || deployError) && (
+            {(isDeploying || deployProgress || deployDone || deployCancelled || deployError) && (
               <section
                 aria-live="polite"
+                aria-atomic="true"
+                role={deployError ? 'alert' : 'status'}
                 className="fluent-card rounded-xl p-4 space-y-2.5"
               >
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium text-slate-200">
-                    {deployDone
+                    {cancelRequested
+                      ? 'Cancellation requested; waiting for deployment to stop…'
+                      : deployDone
                       ? `Deployed to ${selectedRuntime} successfully`
+                      : deployCancelled
+                        ? 'Deployment cancelled'
                       : deployError
                         ? deployError
                         : deployProgress?.stepDescription || 'Preparing deployment...'}
@@ -1406,20 +1425,47 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
                 <div
                   role="progressbar"
-                  aria-valuenow={deployProgress?.percentComplete ?? 0}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
+                  aria-label="Model deployment progress"
+                  aria-valuetext={deployProgress?.stepDescription || 'Preparing deployment'}
+                  {...(deployProgress &&
+                  Number.isFinite(deployProgress.percentComplete) &&
+                  deployProgress.currentStepIndex === 1
+                    ? {
+                        'aria-valuenow': deployProgress.percentComplete,
+                        'aria-valuemin': 0,
+                        'aria-valuemax': 100,
+                      }
+                    : {})}
                   className="h-2 w-full overflow-hidden rounded-full bg-white/[0.08]"
                 >
                   <div
                     className={`h-full transition-all duration-150 ${
                       deployDone
                         ? 'bg-emerald-400'
-                        : deployError
+                        : deployCancelled
+                          ? 'bg-slate-500'
+                          : deployError
                           ? 'bg-rose-500'
                           : 'bg-gradient-to-r from-[#0078d4] to-[#38bdf8]'
+                    } ${
+                      !deployDone &&
+                      !deployCancelled &&
+                      !deployError &&
+                      !(deployProgress &&
+                        Number.isFinite(deployProgress.percentComplete) &&
+                        deployProgress.currentStepIndex === 1)
+                        ? 'w-1/3 animate-pulse'
+                        : ''
                     }`}
-                    style={{ width: `${deployDone ? 100 : deployProgress?.percentComplete ?? 0}%` }}
+                    style={
+                      deployDone
+                        ? { width: '100%' }
+                        : deployProgress &&
+                            Number.isFinite(deployProgress.percentComplete) &&
+                            deployProgress.currentStepIndex === 1
+                          ? { width: `${deployProgress.percentComplete}%` }
+                          : undefined
+                    }
                   />
                 </div>
               </section>
@@ -1460,6 +1506,9 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
               <HardDrive className="h-4 w-4 text-slate-400" aria-hidden={true} />
               <span>
                 Disk required: <strong className="text-white">{formatBytes(selectedQuant.sizeBytes)}</strong>
+                {!window.electronAPI && (
+                  <span className="ml-2 text-amber-300">Preview only — no files will be installed</span>
+                )}
               </span>
             </div>
 
@@ -1485,16 +1534,23 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
                   className="inline-flex items-center gap-2 rounded-lg border border-rose-500/40 bg-rose-500/20 px-4 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/30"
                 >
                   <StopCircle className="h-4 w-4" aria-hidden={true} />
-                  Cancel
+                  {cancelRequested ? 'Cancelling…' : 'Cancel'}
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={handleDeploy}
+                  disabled={selectedRuntime !== 'ollama' || selectedQuant.format !== 'gguf' || (!window.electronAPI)}
                   className="inline-flex items-center gap-2 rounded-lg bg-[#0078d4] px-4 py-2 text-xs font-semibold text-white shadow-md shadow-[#0078d4]/30 transition-colors hover:bg-[#1084d8]"
                 >
                   <Download className="h-4 w-4" aria-hidden={true} />
-                  {deployDone ? 'Redeploy Model' : 'One-Click Deploy'}
+                  {selectedRuntime !== 'ollama'
+                    ? 'Ollama only'
+                    : !window.electronAPI
+                      ? 'Available in desktop app'
+                      : selectedQuant.format !== 'gguf'
+                        ? 'GGUF required'
+                      : deployDone ? 'Redeploy Model' : 'Install with Ollama'}
                 </button>
               )}
             </div>

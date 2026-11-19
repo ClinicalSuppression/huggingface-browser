@@ -51,6 +51,30 @@ describe('Local Database SQLite Integration', () => {
     expect(job?.progress_percent).toBe(45.5);
   });
 
+  it('propagates job persistence failures', () => {
+    const database = LocalDatabase as unknown as { dbPath: string };
+    const originalPath = database.dbPath;
+    database.dbPath = path.dirname(testDbPath);
+    try {
+      expect(() => LocalDatabase.upsertJob({
+        job_id: 'job-persist-failure',
+        model_repo: 'owner/model',
+        revision: 'main',
+        runtime_id: 'ollama',
+        target_tag: 'model:latest',
+        status: 'downloading',
+        progress_percent: 0,
+        bytes_downloaded: 0,
+        bytes_total: 1,
+        install_plan_json: '{}',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })).toThrow();
+    } finally {
+      database.dbPath = originalPath;
+    }
+  });
+
   afterAll(() => {
     if (fs.existsSync(testDbPath)) {
       try { fs.unlinkSync(testDbPath); } catch {}

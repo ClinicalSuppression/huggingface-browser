@@ -179,21 +179,12 @@ export function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const handleDeploySuccess = (runtimeId: RuntimeId, modelTag: string, sizeBytes: number) => {
-    setInstalledModels((prev) => {
-      const exists = prev.some((m) => m.runtimeId === runtimeId && m.id === modelTag);
-      if (exists) return prev;
-      return [
-        {
-          runtimeId,
-          id: modelTag,
-          sizeBytes,
-          modifiedAtIso: new Date().toISOString(),
-          checksumStatus: 'verified',
-        },
-        ...prev,
-      ];
-    });
+  const handleDeploySuccess = async (_runtimeId: RuntimeId, _modelTag: string, _sizeBytes: number) => {
+    try {
+      await refreshInstalled();
+    } catch {
+      // Keep the existing installed list when the runtime refresh fails.
+    }
   };
 
   const handleRemoveInstalled = (runtimeId: RuntimeId, id: string) => {

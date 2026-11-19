@@ -470,11 +470,38 @@ export const bridgeService = {
     modelId: string,
     totalBytes: number,
     onProgress: (p: InstallProgress) => void,
-    signal: AbortSignal
+    signal: AbortSignal,
+    selectedFilename?: string
   ): Promise<{ success: boolean; error?: string }> {
+    if (window.electronAPI) {
+      let planId: string | undefined;
+      let unsubscribe: (() => void) | undefined;
+      const cancel = () => { if (planId) void window.electronAPI!.cancelInstall(planId); };
+      if (signal.aborted) return { success: false, error: 'Deployment cancelled by user.' };
+      signal.addEventListener('abort', cancel, { once: true });
+      try {
+        const plan = await window.electronAPI.createInstallPlan(runtimeId, modelId, selectedFilename);
+        planId = plan.planId;
+        unsubscribe = window.electronAPI.onInstallProgress(progress => {
+          if (progress.planId === planId) onProgress(progress);
+        });
+        const installPromise = window.electronAPI.startInstall(planId);
+        // An abort may have fired while main was still building the plan. Start
+        // first so the main process has registered its controller, then request
+        // cancellation instead of silently proceeding with the install.
+        if (signal.aborted) cancel();
+        return await installPromise;
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      } finally {
+        unsubscribe?.();
+        signal.removeEventListener('abort', cancel);
+      }
+    }
+
     const planId = `plan-${Date.now()}`;
     const steps = [
-      'Verifying target disk space & SHA-256 manifest',
+      'Checking target disk space',
       `Downloading weights for ${modelId.split('/').pop()}`,
       `Generating ${runtimeId} runtime configuration & preset`,
       `Registering model with ${runtimeId} local server`,

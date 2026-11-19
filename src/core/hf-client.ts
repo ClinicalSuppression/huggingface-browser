@@ -1,5 +1,5 @@
 import https from 'https';
-import { HfModelSearchResult } from '../types';
+import { ArtifactFileTarget, HfModelSearchResult } from '../types';
 import { parseQuantFromFilename, groupGgufShards, findMatchingMultimodalProjector } from './gguf-parser';
 
 export interface SearchOptions {
@@ -179,6 +179,32 @@ export class HuggingFaceClient {
       hasGguf: ggufFiles.length > 0,
       hasSafeTensors: safeTensorsFiles.length > 0,
     };
+  }
+
+  /** Resolve a single complete GGUF file using the Hub's actual sibling metadata. */
+  public static resolveArtifactTargets(model: HfModelSearchResult, selectedFilename?: string): ArtifactFileTarget[] {
+    const revision = model.sha;
+    if (!model.id || !revision) throw new Error('Model id and revision are required');
+    const siblings = model.siblings || [];
+    const files = siblings.filter(s => s.rfilename.toLowerCase().endsWith('.gguf') &&
+      !s.rfilename.toLowerCase().includes('mmproj'));
+    const file = selectedFilename
+      ? files.find(sibling => sibling.rfilename === selectedFilename)
+      : files.length === 1 ? files[0] : undefined;
+    if (!file) throw new Error(selectedFilename ? 'Selected GGUF file is not available in this model repository' : 'Select a GGUF file; multiple artifacts are available');
+    if (!Number.isSafeInteger(file.size) || (file.size ?? 0) <= 0) {
+      throw new Error(`GGUF sibling has no valid size: ${file.rfilename}`);
+    }
+    if (file.rfilename.startsWith('/') || file.rfilename.split(/[\\/]/).some(part => part === '..')) {
+      throw new Error('Unsafe artifact filename');
+    }
+    return [{
+      fileId: `${model.id}/${file.rfilename}`,
+      remoteUrl: `https://huggingface.co/${model.id}/resolve/${encodeURIComponent(revision)}/${file.rfilename.split('/').map(encodeURIComponent).join('/')}`,
+      destinationRelativePath: file.rfilename,
+      expectedSizeBytes: file.size!,
+      role: 'primary_weights',
+    }];
   }
 
   private static request<T>(path: string, token?: string): Promise<T> {

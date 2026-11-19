@@ -142,12 +142,17 @@ export class LocalDatabase {
   public static persist(): void {
     if (!this.db || !this.dbPath) return;
     try {
-      const data = this.db.export();
-      const buffer = Buffer.from(data);
-      fs.writeFileSync(this.dbPath, buffer);
+      this.persistStrict();
     } catch (err) {
       console.error('Failed to persist database file:', err);
     }
+  }
+
+  /** Persist and propagate filesystem errors for callers that require durability. */
+  public static persistStrict(): void {
+    if (!this.db || !this.dbPath) return;
+    const data = this.db.export();
+    fs.writeFileSync(this.dbPath, Buffer.from(data));
   }
 
   // Runtime installation records
@@ -182,7 +187,7 @@ export class LocalDatabase {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [job.job_id, job.model_repo, job.revision, job.runtime_id, job.target_tag, job.status, job.progress_percent, job.bytes_downloaded, job.bytes_total, job.install_plan_json, job.error_message || null, job.created_at, job.updated_at]
     );
-    this.persist();
+    this.persistStrict();
   }
 
   public static getJobs(): InstallJobRow[] {

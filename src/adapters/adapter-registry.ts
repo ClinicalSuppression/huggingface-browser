@@ -39,18 +39,14 @@ export class AdapterRegistry {
     return results;
   }
 
-  async listAllInstalledModels(): Promise<Array<{ runtimeId: RuntimeId; runtimeName: string; model: { readonly id: string; readonly sizeBytes: number; readonly modifiedAtIso: string } }>> {
-    const allModels: Array<{ runtimeId: RuntimeId; runtimeName: string; model: { readonly id: string; readonly sizeBytes: number; readonly modifiedAtIso: string } }> = [];
+  async listAllInstalledModels(): Promise<Array<{ runtimeId: RuntimeId; id: string; sizeBytes: number; modifiedAtIso: string }>> {
+    const allModels: Array<{ runtimeId: RuntimeId; id: string; sizeBytes: number; modifiedAtIso: string }> = [];
     
     for (const adapter of this.adapters.values()) {
       try {
         const models = await adapter.listInstalledModels();
         for (const m of models) {
-          allModels.push({
-            runtimeId: adapter.id,
-            runtimeName: adapter.displayName,
-            model: m
-          });
+          allModels.push({ runtimeId: adapter.id, id: m.id, sizeBytes: m.sizeBytes, modifiedAtIso: m.modifiedAtIso });
         }
       } catch {
         // Skip failed adapters during model listing

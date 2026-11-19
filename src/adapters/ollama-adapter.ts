@@ -7,11 +7,15 @@ import {
   ArtifactFileTarget, 
   CompatibilityReport, 
   InstallPlan, 
+  InstallExecutionContext,
   InstallProgress, 
   VerificationResult 
 } from '../types';
 import { evaluateHardwareFit } from '../core/sizing';
 import { parseQuantFromFilename } from '../core/gguf-parser';
+import path from 'path';
+import os from 'os';
+import { DownloadManager } from '../core/download-manager';
 
 export class OllamaAdapter implements IRuntimeAdapter {
   readonly id: RuntimeId = 'ollama';
@@ -142,13 +146,15 @@ export class OllamaAdapter implements IRuntimeAdapter {
     const totalBytes = artifact.reduce((acc, a) => acc + a.expectedSizeBytes, 0);
     const planId = `plan-ollama-${Date.now()}`;
     const primary = artifact.find(a => a.role === 'primary_weights') || artifact[0];
-    const modelRepo = primary ? primary.fileId : 'unknown-model';
+    const modelRepo = primary ? primary.fileId.split('/').slice(0, 2).join('/') : 'unknown-model';
+    const artifactName = primary ? path.basename(primary.destinationRelativePath).replace(/\.gguf$/i, '') : 'model';
+    const testModelTag = `hf-${`${modelRepo}-${artifactName}`.toLowerCase().replace(/[^a-z0-9._-]/g, '-')}`.slice(0, 200);
 
     return {
       planId,
       runtimeId: this.id,
       modelRepo,
-      revision: 'main',
+      revision: artifact.map(a => a.remoteUrl.match(/\/resolve\/([^/]+)\//)?.[1]).find(Boolean) || 'main',
       artifactFiles: artifact,
       totalDownloadBytes: totalBytes,
       requiredDiskSpaceBytes: totalBytes * 2,
@@ -177,7 +183,7 @@ export class OllamaAdapter implements IRuntimeAdapter {
       ],
       verificationConfig: {
         testEndpoint: `${this.endpointUrl}/api/generate`,
-        testModelTag: modelRepo.replace('/', '_').toLowerCase(),
+        testModelTag,
         testPrompt: 'test',
         maxTimeoutSeconds: 60
       },
@@ -185,52 +191,68 @@ export class OllamaAdapter implements IRuntimeAdapter {
     };
   }
 
-  async executeInstall(plan: InstallPlan, onProgress: (p: InstallProgress) => void, cancelSignal: AbortSignal): Promise<boolean> {
-    const totalSteps = plan.steps.length;
-    let completedBytes = 0;
-
-    for (let i = 0; i < plan.steps.length; i++) {
-      if (cancelSignal.aborted) return false;
-      const step = plan.steps[i];
-      
-      onProgress({
-        planId: plan.planId,
-        currentStepIndex: i,
-        totalSteps,
-        stepDescription: step.description,
-        bytesDownloaded: completedBytes,
-        bytesTotal: plan.totalDownloadBytes,
-        percentComplete: Math.round((i / totalSteps) * 100),
-        downloadSpeedBytesPerSec: 1024 * 1024
-      });
-
-      if (step.type === 'http_download') {
-        completedBytes = plan.totalDownloadBytes;
-      } else if (step.type === 'api_register' || step.type === 'create_modelfile') {
-        try {
-          const res = await fetch(`${this.endpointUrl}/api/create`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: plan.verificationConfig.testModelTag,
-              modelfile: `FROM ${plan.artifactFiles[0]?.destinationRelativePath || ''}`
-            }),
-            signal: cancelSignal
-          });
-          if (!res.ok) return false;
-          const reader = res.body?.getReader();
-          if (reader) {
-            while (true) {
-              const { done } = await reader.read();
-              if (done) break;
-            }
-          }
-        } catch {
-          // Graceful handling
-        }
-      }
+  async executeInstall(
+    plan: InstallPlan,
+    onProgress: (p: InstallProgress) => void,
+    cancelSignal: AbortSignal,
+    context?: InstallExecutionContext
+  ): Promise<boolean> {
+    if (cancelSignal.aborted) return false;
+    if (!/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i.test(this.endpointUrl)) {
+      throw new Error('Ollama import requires a local endpoint that can access the downloaded GGUF path');
     }
-
+    if (plan.artifactFiles.length !== 1 || !plan.artifactFiles[0].destinationRelativePath.toLowerCase().endsWith('.gguf')) {
+      throw new Error('Ollama supports only a single GGUF artifact');
+    }
+    const artifact = plan.artifactFiles[0];
+    const localPath = path.join(os.homedir(), '.cache', 'hf-browser', 'models', plan.planId, path.basename(artifact.destinationRelativePath));
+    await DownloadManager.downloadFile({
+      planId: plan.planId,
+      url: artifact.remoteUrl,
+      destinationPath: localPath,
+      expectedSizeBytes: artifact.expectedSizeBytes,
+      expectedSha256: artifact.sha256Checksum,
+      token: context?.downloadToken,
+      onProgress,
+      cancelSignal,
+    });
+    if (cancelSignal.aborted) return false;
+    const modelfile = `FROM ${localPath}`;
+    const totalSteps = plan.steps.length;
+    onProgress({
+      planId: plan.planId, currentStepIndex: 2, totalSteps,
+      stepDescription: 'Importing GGUF into Ollama',
+      bytesDownloaded: plan.totalDownloadBytes, bytesTotal: plan.totalDownloadBytes,
+      percentComplete: 95, downloadSpeedBytesPerSec: 0,
+    });
+    const res = await fetch(`${this.endpointUrl}/api/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: plan.verificationConfig.testModelTag, modelfile, stream: true }),
+      signal: cancelSignal,
+    });
+    if (!res.ok) throw new Error(`Ollama model registration failed (HTTP ${res.status})`);
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('Ollama registration returned no response stream');
+    const decoder = new TextDecoder();
+    let pending = '';
+    let succeeded = false;
+    const consume = (line: string) => {
+      if (!line.trim()) return;
+      const event = JSON.parse(line) as { error?: string; status?: string };
+      if (event.error) throw new Error(`Ollama model registration failed: ${event.error}`);
+      if (event.status === 'success') succeeded = true;
+    };
+    while (true) {
+      const { done, value } = await reader.read();
+      pending += decoder.decode(value, { stream: !done });
+      const lines = pending.split('\n');
+      pending = lines.pop() || '';
+      lines.forEach(consume);
+      if (done) break;
+    }
+    if (pending.trim()) consume(pending);
+    if (!succeeded) throw new Error('Ollama model registration ended without a success event');
     onProgress({
       planId: plan.planId,
       currentStepIndex: totalSteps,

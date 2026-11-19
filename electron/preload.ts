@@ -9,7 +9,8 @@ import {
   VerificationResult,
   RuntimeId,
   PresetIntent,
-  PurposePreset
+  PurposePreset,
+  InstallPlanId
 } from '../src/types';
 
 export interface IElectronAPI {
@@ -36,8 +37,8 @@ export interface IElectronAPI {
   evaluateCompatibility(runtimeId: RuntimeId, artifacts: ArtifactFileTarget[], hw: HardwareProfile): Promise<CompatibilityReport>;
 
   // Install & Verification
-  createInstallPlan(runtimeId: RuntimeId, artifacts: ArtifactFileTarget[], hw: HardwareProfile, options?: Record<string, unknown>): Promise<InstallPlan>;
-  startInstall(plan: InstallPlan): Promise<{ success: boolean; error?: string }>;
+  createInstallPlan(runtimeId: RuntimeId, modelId: string, selectedFilename: string | undefined, options?: Record<string, unknown>): Promise<InstallPlan>;
+  startInstall(planId: InstallPlanId): Promise<{ success: boolean; error?: string }>;
   cancelInstall(planId: string): Promise<boolean>;
   onInstallProgress(callback: (progress: InstallProgress) => void): () => void;
   runSmokeTest(runtimeId: RuntimeId, modelTag: string): Promise<VerificationResult>;
@@ -68,8 +69,8 @@ const electronAPI: IElectronAPI = {
   listRuntimeModels: (runtimeId) => ipcRenderer.invoke('runtimes:listModels', runtimeId),
   evaluateCompatibility: (runtimeId, artifacts, hw) => ipcRenderer.invoke('runtimes:evaluateCompatibility', runtimeId, artifacts, hw),
 
-  createInstallPlan: (runtimeId, artifacts, hw, options) => ipcRenderer.invoke('install:createPlan', runtimeId, artifacts, hw, options),
-  startInstall: (plan) => ipcRenderer.invoke('install:start', plan),
+  createInstallPlan: (runtimeId, modelId, filename, options) => ipcRenderer.invoke('install:createPlan', runtimeId, modelId, filename, options),
+  startInstall: (planId) => ipcRenderer.invoke('install:start', planId),
   cancelInstall: (planId) => ipcRenderer.invoke('install:cancel', planId),
   onInstallProgress: (callback) => {
     const subscription = (_event: any, progress: InstallProgress) => callback(progress);

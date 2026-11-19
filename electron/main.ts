@@ -1,4 +1,5 @@
 import { app, BrowserWindow, crashReporter, ipcMain, shell } from 'electron';
+import { randomUUID } from 'crypto';
 import path from 'path';
 import { detectHardware, getLiveVramUsage } from '../src/core/hardware';
 import { HuggingFaceClient } from '../src/core/hf-client';
@@ -7,10 +8,12 @@ import { globalAdapterRegistry } from '../src/adapters/adapter-registry';
 import { getPurposePreset } from '../src/core/presets';
 import { LocalDatabase } from '../src/core/db';
 import { CacheScanner } from '../src/core/cache-scanner';
-import { InstallPlan, PresetIntent, RuntimeId } from '../src/types';
+import { InstallPlan, InstallPlanId, PresetIntent, RuntimeId } from '../src/types';
 
 let mainWindow: BrowserWindow | null = null;
 const activeAbortControllers: Map<string, AbortController> = new Map();
+const installPlans = new Map<InstallPlanId, InstallPlan>();
+const settledPlans = new Set<InstallPlanId>();
 
 async function createWindow() {
   await LocalDatabase.init();
@@ -142,94 +145,92 @@ ipcMain.handle('runtimes:evaluateCompatibility', async (_event, runtimeId: Runti
   return adapter.evaluateCompatibility(artifacts, hw);
 });
 
-ipcMain.handle('install:createPlan', async (_event, runtimeId: RuntimeId, artifacts: any, hw: any, options: any) => {
+ipcMain.handle('install:createPlan', async (_event, runtimeId: RuntimeId, modelId: string, selectedFilename: string | undefined, options: any) => {
+  if (runtimeId !== 'ollama') throw new Error(`Install is not supported for runtime: ${runtimeId}`);
+  if (typeof modelId !== 'string' || !/^[^/]+\/[^/]+$/.test(modelId)) throw new Error('Invalid Hugging Face model ID');
   const adapter = globalAdapterRegistry.getAdapter(runtimeId);
   if (!adapter) throw new Error(`Unknown runtime adapter: ${runtimeId}`);
-  return adapter.createInstallPlan(artifacts, hw, options);
+  const token = await CredentialVault.getHfToken();
+  const model = await HuggingFaceClient.getModelDetails(modelId, token || undefined);
+  const artifacts = HuggingFaceClient.resolveArtifactTargets(model, selectedFilename);
+  const proposedPlan = await adapter.createInstallPlan(artifacts, await detectHardware(), options);
+  const plan: InstallPlan = { ...proposedPlan, planId: randomUUID() };
+  if (plan.runtimeId !== 'ollama' || typeof plan.planId !== 'string' || !plan.planId ||
+      typeof plan.modelRepo !== 'string' || !plan.modelRepo || typeof plan.revision !== 'string' ||
+      !Array.isArray(plan.artifactFiles) || !Array.isArray(plan.steps) ||
+      !Number.isFinite(plan.totalDownloadBytes) || plan.totalDownloadBytes < 0 ||
+      !plan.verificationConfig || typeof plan.verificationConfig.testModelTag !== 'string' ||
+      installPlans.has(plan.planId)) throw new Error('Invalid or duplicate install plan');
+  installPlans.set(plan.planId, plan);
+  return plan;
 });
 
-ipcMain.handle('install:start', async (_event, plan: InstallPlan) => {
+ipcMain.handle('install:start', async (_event, planId: InstallPlanId) => {
+  if (typeof planId !== 'string' || !installPlans.has(planId)) throw new Error('Unknown install plan');
+  if (activeAbortControllers.has(planId) || settledPlans.has(planId)) throw new Error('Install plan is already running or settled');
+  const plan = installPlans.get(planId)!;
+  if (plan.runtimeId !== 'ollama') throw new Error(`Install is not supported for runtime: ${plan.runtimeId}`);
   const adapter = globalAdapterRegistry.getAdapter(plan.runtimeId);
   if (!adapter) throw new Error(`Unknown runtime adapter: ${plan.runtimeId}`);
 
   const abortController = new AbortController();
   activeAbortControllers.set(plan.planId, abortController);
-
-  LocalDatabase.upsertJob({
-    job_id: plan.planId,
-    model_repo: plan.modelRepo,
-    revision: plan.revision,
-    runtime_id: plan.runtimeId,
-    target_tag: plan.verificationConfig.testModelTag,
-    status: 'downloading',
-    progress_percent: 0,
-    bytes_downloaded: 0,
-    bytes_total: plan.totalDownloadBytes,
-    install_plan_json: JSON.stringify(plan),
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  });
-
+  const createdAt = new Date().toISOString();
+  let lastProgress = { percent: 0, downloaded: 0, total: plan.totalDownloadBytes };
+  let terminalAttempted = false;
+  const writeJob = (status: 'downloading' | 'completed' | 'failed' | 'cancelled', progress: number, downloaded: number, error?: string) =>
+    LocalDatabase.upsertJob({
+      job_id: plan.planId, model_repo: plan.modelRepo, revision: plan.revision,
+      runtime_id: plan.runtimeId, target_tag: plan.verificationConfig.testModelTag,
+      status, progress_percent: progress, bytes_downloaded: downloaded,
+      bytes_total: plan.totalDownloadBytes, install_plan_json: JSON.stringify(plan),
+      ...(error ? { error_message: error } : {}),
+      created_at: createdAt, updated_at: new Date().toISOString(),
+    });
   try {
+    LocalDatabase.upsertRuntime({
+      runtime_id: 'ollama', display_name: adapter.displayName,
+      endpoint_url: 'http://127.0.0.1:11434', is_active: 1, is_healthy: 0,
+    });
+    writeJob('downloading', 0, 0);
+
+    const downloadToken = await CredentialVault.getHfToken();
     const success = await adapter.executeInstall(
       plan,
       (progress) => {
+        lastProgress = { percent: progress.percentComplete, downloaded: progress.bytesDownloaded, total: progress.bytesTotal };
         if (mainWindow) {
-          mainWindow.webContents.send('install:progress', progress);
+          mainWindow.webContents.send('install:progress', { ...progress, planId: plan.planId });
         }
-        LocalDatabase.upsertJob({
-          job_id: plan.planId,
-          model_repo: plan.modelRepo,
-          revision: plan.revision,
-          runtime_id: plan.runtimeId,
-          target_tag: plan.verificationConfig.testModelTag,
-          status: 'downloading',
-          progress_percent: progress.percentComplete,
-          bytes_downloaded: progress.bytesDownloaded,
-          bytes_total: progress.bytesTotal,
-          install_plan_json: JSON.stringify(plan),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
+        writeJob('downloading', progress.percentComplete, progress.bytesDownloaded);
       },
-      abortController.signal
+      abortController.signal,
+      { downloadToken: downloadToken || undefined }
     );
 
-    LocalDatabase.upsertJob({
-      job_id: plan.planId,
-      model_repo: plan.modelRepo,
-      revision: plan.revision,
-      runtime_id: plan.runtimeId,
-      target_tag: plan.verificationConfig.testModelTag,
-      status: success ? 'completed' : 'failed',
-      progress_percent: 100,
-      bytes_downloaded: plan.totalDownloadBytes,
-      bytes_total: plan.totalDownloadBytes,
-      install_plan_json: JSON.stringify(plan),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-
-    return { success };
+    const status = success ? 'completed' : abortController.signal.aborted ? 'cancelled' : 'failed';
+    terminalAttempted = true;
+    settledPlans.add(plan.planId);
+    writeJob(status, success ? 100 : lastProgress.percent, success ? plan.totalDownloadBytes : lastProgress.downloaded,
+      success ? undefined : abortController.signal.aborted ? 'Installation cancelled' : 'Installation failed');
+    return { success, ...(!success ? { error: abortController.signal.aborted ? 'Installation cancelled' : 'Installation failed' } : {}) };
   } catch (err: any) {
-    LocalDatabase.upsertJob({
-      job_id: plan.planId,
-      model_repo: plan.modelRepo,
-      revision: plan.revision,
-      runtime_id: plan.runtimeId,
-      target_tag: plan.verificationConfig.testModelTag,
-      status: 'failed',
-      progress_percent: 0,
-      bytes_downloaded: 0,
-      bytes_total: plan.totalDownloadBytes,
-      install_plan_json: JSON.stringify(plan),
-      error_message: err.message,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-    return { success: false, error: err.message };
+    if (!terminalAttempted) {
+      terminalAttempted = true;
+      settledPlans.add(plan.planId);
+      try {
+        writeJob(abortController.signal.aborted ? 'cancelled' : 'failed', lastProgress.percent, lastProgress.downloaded,
+          String(err?.message || err));
+      } catch (persistError: any) {
+        return { success: false, error: `Install failed and terminal state could not be persisted: ${persistError?.message || persistError}` };
+      }
+    } else {
+      return { success: false, error: `Install completed but terminal state could not be persisted: ${err?.message || err}` };
+    }
+    return { success: false, error: String(err?.message || err) };
   } finally {
     activeAbortControllers.delete(plan.planId);
+    installPlans.delete(plan.planId);
   }
 });
 
@@ -237,7 +238,6 @@ ipcMain.handle('install:cancel', async (_event, planId: string) => {
   const controller = activeAbortControllers.get(planId);
   if (controller) {
     controller.abort();
-    activeAbortControllers.delete(planId);
     return true;
   }
   return false;
