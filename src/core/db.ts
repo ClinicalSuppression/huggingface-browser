@@ -202,4 +202,24 @@ export class LocalDatabase {
       return obj as unknown as InstallJobRow;
     });
   }
+
+  /** Mark jobs left active by a previous process as interrupted during startup. */
+  public static failInterruptedJobs(): void {
+    if (!this.db) return;
+    this.db.run('BEGIN TRANSACTION');
+    try {
+      this.db.run(
+        `UPDATE install_jobs
+         SET status = 'failed', error_message = 'Installation interrupted because the application stopped unexpectedly',
+             updated_at = ?
+         WHERE status IN ('pending', 'downloading', 'verifying')`,
+        [new Date().toISOString()]
+      );
+      this.db.run('COMMIT');
+    } catch (error) {
+      this.db.run('ROLLBACK');
+      throw error;
+    }
+    this.persistStrict();
+  }
 }

@@ -22,9 +22,13 @@ export class OllamaAdapter implements IRuntimeAdapter {
   readonly displayName: string = 'Ollama';
   protected endpointUrl: string;
   private readonly availableSpace: (directory: string) => Promise<number>;
+  private readonly requestTimeoutMs: number;
+  private readonly registrationIdleTimeoutMs: number;
 
-  constructor(endpointUrl: string = 'http://127.0.0.1:11434', availableSpace?: (directory: string) => Promise<number>) {
+  constructor(endpointUrl: string = 'http://127.0.0.1:11434', availableSpace?: (directory: string) => Promise<number>, requestTimeoutMs = 15_000, registrationIdleTimeoutMs = 120_000) {
     this.endpointUrl = endpointUrl;
+    this.requestTimeoutMs = requestTimeoutMs;
+    this.registrationIdleTimeoutMs = registrationIdleTimeoutMs;
     this.availableSpace = availableSpace ?? (async directory => {
       const stat = await fs.promises.statfs(directory);
       return stat.bavail * stat.bsize;
@@ -76,7 +80,7 @@ export class OllamaAdapter implements IRuntimeAdapter {
 
   async listInstalledModels(): Promise<Array<{ readonly id: string; readonly sizeBytes: number; readonly modifiedAtIso: string }>> {
     try {
-      const res = await fetch(`${this.endpointUrl}/api/tags`);
+      const res = await fetch(`${this.endpointUrl}/api/tags`, { signal: AbortSignal.timeout(this.requestTimeoutMs) });
       if (!res.ok) return [];
       const data = (await res.json()) as { models?: Array<{ name?: string; model?: string; size?: number; modified_at?: string }> };
       if (!data.models || !Array.isArray(data.models)) return [];
@@ -241,11 +245,12 @@ export class OllamaAdapter implements IRuntimeAdapter {
       bytesDownloaded: plan.totalDownloadBytes, bytesTotal: plan.totalDownloadBytes,
       percentComplete: 95, downloadSpeedBytesPerSec: 0,
     });
+    const registrationController = new AbortController();
     const res = await fetch(`${this.endpointUrl}/api/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: plan.verificationConfig.testModelTag, modelfile, stream: true }),
-      signal: cancelSignal,
+      signal: AbortSignal.any([cancelSignal, registrationController.signal, AbortSignal.timeout(Math.min(30 * 60_000, Math.max(60_000, (plan.verificationConfig.maxTimeoutSeconds || 60) * 1000)))]),
     });
     if (!res.ok) throw new Error(`Ollama model registration failed (HTTP ${res.status})`);
     const reader = res.body?.getReader();
@@ -259,13 +264,26 @@ export class OllamaAdapter implements IRuntimeAdapter {
       if (event.error) throw new Error(`Ollama model registration failed: ${event.error}`);
       if (event.status === 'success') succeeded = true;
     };
+    try {
     while (true) {
-      const { done, value } = await reader.read();
+      let idleTimer: ReturnType<typeof setTimeout> | undefined;
+      const idle = new Promise<never>((_, reject) => {
+        idleTimer = setTimeout(() => reject(new Error('Ollama registration stream timed out waiting for data')), this.registrationIdleTimeoutMs);
+      });
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try { result = await Promise.race([reader.read(), idle]); }
+      finally { if (idleTimer) clearTimeout(idleTimer); }
+      const { done, value } = result;
       pending += decoder.decode(value, { stream: !done });
       const lines = pending.split('\n');
       pending = lines.pop() || '';
       lines.forEach(consume);
       if (done) break;
+    }
+    } catch (error) {
+      registrationController.abort();
+      await reader.cancel(error).catch(() => undefined);
+      throw error;
     }
     if (pending.trim()) consume(pending);
     if (!succeeded) throw new Error('Ollama model registration ended without a success event');
@@ -285,10 +303,12 @@ export class OllamaAdapter implements IRuntimeAdapter {
 
   async verifyInstall(plan: InstallPlan): Promise<VerificationResult> {
     const startTime = Date.now();
+    const timeoutMs = Math.min(this.requestTimeoutMs, 10 * 60_000, Math.max(1, (plan.verificationConfig.maxTimeoutSeconds || 60) * 1000));
     try {
       const res = await fetch(`${this.endpointUrl}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(timeoutMs),
         body: JSON.stringify({
           model: plan.verificationConfig.testModelTag,
           prompt: plan.verificationConfig.testPrompt,
@@ -329,7 +349,9 @@ export class OllamaAdapter implements IRuntimeAdapter {
         rawOutputSample: data.response || 'test output'
       };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = err instanceof Error && err.name === 'TimeoutError'
+        ? `Ollama verification timed out after ${timeoutMs}ms`
+        : err instanceof Error ? err.message : String(err);
       return {
         passed: false,
         modelLoadedSuccessfully: false,
@@ -345,6 +367,7 @@ export class OllamaAdapter implements IRuntimeAdapter {
     try {
       const res = await fetch(`${this.endpointUrl}/api/delete`, {
         method: 'DELETE',
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: modelTag })
       });

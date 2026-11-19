@@ -131,4 +131,43 @@ describe('DownloadManager validation', () => {
     expect(fs.readFileSync(destinationPath, 'utf8')).toBe('preserve me');
     expectNoTemporaryFiles(destinationPath);
   });
+
+  it('times out an inactive response and preserves the destination', async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-manager-'));
+    server = http.createServer((_req, res) => { res.writeHead(200); res.write('partial'); });
+    await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as import('net').AddressInfo;
+    const destinationPath = path.join(dir, 'model.bin');
+    fs.writeFileSync(destinationPath, 'preserve me');
+    await expect(DownloadManager.downloadFile({
+      planId: 'test', url: `http://127.0.0.1:${address.port}/model`, destinationPath,
+      requestTimeoutMs: 30,
+    })).rejects.toThrow(/inactivity timeout/);
+    expect(fs.readFileSync(destinationPath, 'utf8')).toBe('preserve me');
+    expectNoTemporaryFiles(destinationPath);
+  });
+
+  it('rejects non-Hugging Face and cross-scheme redirects', async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-manager-'));
+    server = http.createServer((_req, res) => { res.writeHead(302, { Location: 'http://example.com/file' }); res.end(); });
+    await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as import('net').AddressInfo;
+    const destinationPath = path.join(dir, 'model.bin');
+    await expect(DownloadManager.downloadFile({
+      planId: 'test', url: `http://127.0.0.1:${address.port}/model`, destinationPath,
+    })).rejects.toThrow(/Rejected redirect/);
+    expectNoTemporaryFiles(destinationPath);
+  });
+
+  it('enforces the finite redirect-hop limit without following the redirect', async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-manager-'));
+    server = http.createServer((_req, res) => { res.writeHead(302, { Location: '/loop' }); res.end(); });
+    await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as import('net').AddressInfo;
+    const destinationPath = path.join(dir, 'model.bin');
+    await expect(DownloadManager.downloadFile({
+      planId: 'test', url: `http://127.0.0.1:${address.port}/loop`, destinationPath, redirectCount: 5,
+    })).rejects.toThrow(/maximum redirect hops/);
+    expectNoTemporaryFiles(destinationPath);
+  });
 });

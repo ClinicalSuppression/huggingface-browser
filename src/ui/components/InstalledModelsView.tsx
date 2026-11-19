@@ -53,6 +53,7 @@ export const InstalledModelsView: React.FC<InstalledModelsViewProps> = ({
   const [testingKey, setTestingKey] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, VerificationResult>>({});
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
+  const [testAnnouncement, setTestAnnouncement] = useState<{ text: string; failed: boolean } | null>(null);
 
   const getEffectiveTotalBytes = (item: InstalledModelItem): number => {
     if (item.files && item.files.length > 0) {
@@ -66,9 +67,22 @@ export const InstalledModelsView: React.FC<InstalledModelsViewProps> = ({
   const handleTest = async (item: InstalledModelItem) => {
     const key = `${item.runtimeId}:${item.id}`;
     setTestingKey(key);
-    const res = await bridgeService.runSmokeTest(item.runtimeId, item.id);
-    setResults((prev) => ({ ...prev, [key]: res }));
-    setTestingKey(null);
+    setTestAnnouncement(null);
+    try {
+      const res = await bridgeService.runSmokeTest(item.runtimeId, item.id);
+      setResults((prev) => ({ ...prev, [key]: res }));
+      setTestAnnouncement({
+        text: `Inference test passed for ${item.id}. ${res.latencyToFirstTokenMs} milliseconds to first token, ${res.tokensPerSecond.toFixed(1)} tokens per second.`,
+        failed: false,
+      });
+    } catch (error) {
+      setTestAnnouncement({
+        text: `Inference test failed for ${item.id}: ${error instanceof Error ? error.message : String(error)}`,
+        failed: true,
+      });
+    } finally {
+      setTestingKey(null);
+    }
   };
 
   const toggleExpanded = (key: string) => {
@@ -99,6 +113,14 @@ export const InstalledModelsView: React.FC<InstalledModelsViewProps> = ({
       </header>
 
       <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div
+          className="sr-only"
+          role={testAnnouncement?.failed ? 'alert' : 'status'}
+          aria-live={testAnnouncement?.failed ? 'assertive' : 'polite'}
+          aria-atomic="true"
+        >
+          {testAnnouncement?.text || ''}
+        </div>
         {models.length === 0 ? (
           <div className="fluent-card mx-auto mt-12 max-w-md rounded-xl p-8 text-center">
             <HardDrive className="mx-auto h-8 w-8 text-slate-500" aria-hidden={true} />

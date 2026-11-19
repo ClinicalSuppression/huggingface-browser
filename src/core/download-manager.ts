@@ -14,6 +14,8 @@ export interface DownloadTaskOptions {
   readonly token?: string;
   readonly onProgress?: (p: InstallProgress) => void;
   readonly cancelSignal?: AbortSignal;
+  readonly requestTimeoutMs?: number;
+  readonly redirectCount?: number;
 }
 
 export class DownloadManager {
@@ -25,6 +27,10 @@ export class DownloadManager {
     try {
       return await new Promise((resolve, reject) => {
         const parsedUrl = new URL(options.url);
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+          reject(new Error('Unsupported download protocol'));
+          return;
+        }
         const client = parsedUrl.protocol === 'https:' ? https : http;
         const headers: Record<string, string> = { 'User-Agent': 'HF-Model-Browser-Windows/1.0' };
         if (options.token) headers.Authorization = `Bearer ${options.token}`;
@@ -53,7 +59,16 @@ export class DownloadManager {
             const isHfHost = redirectUrl.protocol === 'https:' &&
               (hostname === 'huggingface.co' || hostname.endsWith('.huggingface.co') || hostname === 'hf.co' || hostname.endsWith('.hf.co'));
             res.resume();
-            this.downloadFile({ ...options, url: redirectUrl.toString(), token: isHfHost ? options.token : undefined })
+            const redirects = options.redirectCount ?? 0;
+            if (redirects >= 5) {
+              reject(new Error('Download exceeded maximum redirect hops'));
+              return;
+            }
+            if (!isHfHost) {
+              reject(new Error('Rejected redirect to non-Hugging Face HTTPS host'));
+              return;
+            }
+            this.downloadFile({ ...options, url: redirectUrl.toString(), redirectCount: redirects + 1, token: undefined })
               .then(resolve, reject);
             return;
           }
@@ -136,6 +151,16 @@ export class DownloadManager {
             })();
           });
           res.pipe(output);
+        });
+        req.setTimeout(options.requestTimeoutMs ?? 60_000, () => {
+          const error = new Error('Download request inactivity timeout');
+          if (finishStreamingError) finishStreamingError(error);
+          else {
+            requestFinished = true;
+            cleanupAbortListener();
+            req.destroy(error);
+            reject(error);
+          }
         });
         req.on('error', (error) => {
           if (cancelled) return;

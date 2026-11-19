@@ -25,6 +25,7 @@ const settledPlans = new Set<InstallPlanId>();
 
 async function createWindow() {
   await LocalDatabase.init();
+  LocalDatabase.failInterruptedJobs();
 
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -335,7 +336,17 @@ crashReporter.start({
 app.commandLine.appendSwitch('disable-crash-reporter');
 app.commandLine.appendSwitch('disable-features', 'Crashpad');
 
-app.whenReady().then(createWindow);
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  });
+  app.whenReady().then(createWindow);
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

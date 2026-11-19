@@ -51,6 +51,41 @@ describe('Local Database SQLite Integration', () => {
     expect(job?.progress_percent).toBe(45.5);
   });
 
+  it('fails interrupted jobs while preserving progress and terminal rows', () => {
+    const now = '2025-01-01T00:00:00.000Z';
+    const statuses = ['pending', 'downloading', 'verifying', 'completed', 'failed', 'cancelled'] as const;
+    for (const status of statuses) {
+      LocalDatabase.upsertJob({
+        job_id: `recovery-${status}`, model_repo: 'owner/model', revision: 'main',
+        runtime_id: 'ollama', target_tag: 'model:latest', status,
+        progress_percent: 37.5, bytes_downloaded: 1234, bytes_total: 5678,
+        install_plan_json: '{}', error_message: status === 'failed' ? 'original failure' : undefined,
+        created_at: now, updated_at: now,
+      });
+    }
+
+    LocalDatabase.failInterruptedJobs();
+    const rows = LocalDatabase.getJobs();
+    for (const status of ['pending', 'downloading', 'verifying'] as const) {
+      const row = rows.find(job => job.job_id === `recovery-${status}`)!;
+      expect(row.status).toBe('failed');
+      expect(row.progress_percent).toBe(37.5);
+      expect(row.bytes_downloaded).toBe(1234);
+      expect(row.bytes_total).toBe(5678);
+      expect(row.error_message).toContain('interrupted');
+      expect(row.updated_at).not.toBe(now);
+    }
+    for (const status of ['completed', 'failed', 'cancelled'] as const) {
+      const row = rows.find(job => job.job_id === `recovery-${status}`)!;
+      expect(row.status).toBe(status);
+      expect(row.progress_percent).toBe(37.5);
+      expect(row.bytes_downloaded).toBe(1234);
+      expect(row.updated_at).toBe(now);
+      if (status === 'failed') expect(row.error_message).toBe('original failure');
+      else expect(row.error_message).toBeNull();
+    }
+  });
+
   it('propagates job persistence failures', () => {
     const database = LocalDatabase as unknown as { dbPath: string };
     const originalPath = database.dbPath;

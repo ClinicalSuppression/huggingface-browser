@@ -92,4 +92,47 @@ describe('Ollama executeInstall', () => {
     expect(downloads).toBe(0);
     expect(imports).toBe(0);
   });
+
+  it('bounds stalled model listing and reports a clear verification timeout', async () => {
+    const endpoint = await server((_req, _res) => {});
+    const adapter = new OllamaAdapter(endpoint, undefined, 30);
+    await expect(adapter.listInstalledModels()).resolves.toEqual([]);
+    const artifact: ArtifactFileTarget = {
+      fileId: 'org/model/file.gguf', remoteUrl: endpoint,
+      destinationRelativePath: 'file.gguf', expectedSizeBytes: 1, role: 'primary_weights',
+    };
+    const plan = await adapter.createInstallPlan([artifact], hw);
+    await expect(adapter.verifyInstall(plan)).resolves.toMatchObject({
+      passed: false, errorMessage: expect.stringContaining('timed out'),
+    });
+  });
+
+  it('cancels a stalled registration response after the injectable idle timeout', async () => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ollama-test-'));
+    const payload = Buffer.from('valid test gguf');
+    const downloadUrl = await server((_req, res) => res.end(payload));
+    let responseClosed = false;
+    let markClosed!: () => void;
+    const closed = new Promise<void>(resolve => { markClosed = resolve; });
+    const endpoint = await server((_req, res) => {
+      res.writeHead(200);
+      res.write('{"status":"pulling"}\\n');
+      res.on('close', () => { responseClosed = true; markClosed(); });
+    });
+    const artifact: ArtifactFileTarget = {
+      fileId: 'org/model/model.gguf', remoteUrl: downloadUrl,
+      destinationRelativePath: 'model.gguf', expectedSizeBytes: payload.length, role: 'primary_weights',
+    };
+    const adapter = new OllamaAdapter(endpoint, undefined, 30, 30);
+    const plan = { ...(await adapter.createInstallPlan([artifact], hw)), modelStorageRoot: path.join(tempHome, 'root') };
+    await expect(adapter.executeInstall(plan, () => {}, new AbortController().signal))
+      .rejects.toThrow('stream timed out');
+    await Promise.race([closed, new Promise(resolve => setTimeout(resolve, 200))]);
+    expect(responseClosed).toBe(true);
+  });
+
+  it('bounds a stalled uninstall request', async () => {
+    const endpoint = await server((_req, _res) => {});
+    await expect(new OllamaAdapter(endpoint, undefined, 30).uninstallModel('model')).resolves.toBe(false);
+  });
 });

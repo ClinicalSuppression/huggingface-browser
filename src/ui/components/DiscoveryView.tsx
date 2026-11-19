@@ -339,6 +339,9 @@ export const DiscoveryView: React.FC<DiscoveryViewProps> = ({
       </header>
 
       {/* Model Grid Content (Reflows dynamically via auto-fill when right pane opens/resizes) */}
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {isLoading ? 'Loading models.' : `${filteredModels.length} matching model${filteredModels.length === 1 ? '' : 's'} found.`}
+      </div>
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {isLoading ? (
           <div

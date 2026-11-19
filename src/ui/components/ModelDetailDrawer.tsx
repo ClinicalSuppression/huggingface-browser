@@ -218,6 +218,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   onDeploySuccess,
 }) => {
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  const presetTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const drawerRef = useRef<HTMLElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -662,6 +663,18 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   const handleSelectPresetTab = (intent: PresetIntent) => {
     setPresetIntent(intent);
     setPresetParams(buildDefaultParamsForIntent(intent, authorConfig));
+  };
+
+  const handlePresetTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % PRESET_TABS.length;
+    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + PRESET_TABS.length) % PRESET_TABS.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = PRESET_TABS.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    handleSelectPresetTab(PRESET_TABS[nextIndex].intent);
+    presetTabRefs.current[nextIndex]?.focus();
   };
 
   const handleRestoreDefaults = () => {
@@ -1264,10 +1277,15 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
                   return (
                     <button
                       key={tab.intent}
+                      ref={(element) => { presetTabRefs.current[PRESET_TABS.findIndex((item) => item.intent === tab.intent)] = element; }}
                       type="button"
                       role="tab"
+                      id={`preset-tab-${tab.intent}`}
                       aria-selected={isSelected}
+                      aria-controls="preset-panel"
+                      tabIndex={isSelected ? 0 : -1}
                       onClick={() => handleSelectPresetTab(tab.intent)}
+                      onKeyDown={(event) => handlePresetTabKeyDown(event, PRESET_TABS.findIndex((item) => item.intent === tab.intent))}
                       className={`rounded-lg border px-2.5 py-2 text-center text-xs font-medium transition-all ${
                         isSelected
                           ? isReasoning
@@ -1284,6 +1302,10 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
               {/* Editable Preset Parameters + Think Budget Slider */}
               <div
+                id="preset-panel"
+                role="tabpanel"
+                aria-labelledby={`preset-tab-${presetIntent}`}
+                tabIndex={0}
                 className={`rounded-xl border p-3.5 text-xs space-y-3 ${
                   presetIntent === 'reasoning'
                     ? 'border-purple-400/30 bg-purple-500/[0.08]'

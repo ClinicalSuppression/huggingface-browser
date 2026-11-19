@@ -34,11 +34,19 @@ export const RuntimesView: React.FC<RuntimesViewProps> = ({
   onRefresh,
 }) => {
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState('');
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await onRefresh();
-    setRefreshing(false);
+    setRefreshStatus('');
+    try {
+      await onRefresh();
+      setRefreshStatus('Runtime scan complete.');
+    } catch {
+      setRefreshStatus('Runtime scan failed. Try again.');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const resetRuntime = (runtimeId: keyof RuntimeOptionsConfig) => {
@@ -67,6 +75,7 @@ export const RuntimesView: React.FC<RuntimesViewProps> = ({
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden={true} />
             {refreshing ? 'Scanning...' : 'Re-detect Runtimes'}
           </button>
+          <span className="sr-only" role="status" aria-live="polite">{refreshStatus}</span>
         </div>
       </header>
 

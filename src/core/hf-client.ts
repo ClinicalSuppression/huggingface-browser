@@ -1,6 +1,41 @@
 import https from 'https';
+import { Readable } from 'stream';
 import { ArtifactFileTarget, HfModelSearchResult } from '../types';
 import { parseQuantFromFilename, groupGgufShards, findMatchingMultimodalProjector } from './gguf-parser';
+
+export const MAX_JSON_RESPONSE_BYTES = 16 * 1024 * 1024;
+export const MAX_TEXT_RESPONSE_BYTES = 2 * 1024 * 1024;
+
+export function readBoundedBody(stream: Readable, limit: number, onOverflow?: () => void): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    stream.on('data', (chunk: Buffer | string) => {
+      if (settled) return;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytes += buffer.length;
+      if (bytes > limit) {
+        fail(new Error(`Hugging Face response exceeded the ${limit}-byte limit`));
+        onOverflow?.();
+        stream.destroy();
+        return;
+      }
+      chunks.push(buffer);
+    });
+    stream.on('error', error => fail(error));
+    stream.on('end', () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks, bytes));
+    });
+  });
+}
 
 export interface SearchOptions {
   readonly search?: string;
@@ -226,9 +261,8 @@ export class HuggingFaceClient {
       };
 
       const req = https.request(options, (res) => {
-        let body = '';
-        res.on('data', chunk => { body += chunk; });
-        res.on('end', () => {
+        void readBoundedBody(res, MAX_JSON_RESPONSE_BYTES, () => req.destroy()).then(data => {
+          const body = data.toString('utf8');
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             try {
               resolve(JSON.parse(body) as T);
@@ -242,7 +276,7 @@ export class HuggingFaceClient {
           } else {
             reject(new Error(`Hugging Face API error (Status ${res.statusCode}): ${body.slice(0, 200)}`));
           }
-        });
+        }, reject);
       });
 
       req.on('error', err => reject(err));
@@ -273,15 +307,14 @@ export class HuggingFaceClient {
       };
 
       const req = https.request(options, (res) => {
-        let body = '';
-        res.on('data', chunk => { body += chunk; });
-        res.on('end', () => {
+        void readBoundedBody(res, MAX_TEXT_RESPONSE_BYTES, () => req.destroy()).then(data => {
+          const body = data.toString('utf8');
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             resolve(body);
           } else {
             reject(new Error(`Hugging Face API error (Status ${res.statusCode})`));
           }
-        });
+        }, reject);
       });
 
       req.on('error', err => reject(err));
