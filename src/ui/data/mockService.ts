@@ -72,22 +72,13 @@ function isUncensoredModel(m: HfModelSearchResult): boolean {
 
 function matchesTask(m: HfModelSearchResult, task: TaskFilter): boolean {
   if (task === 'all') return true;
-  const pipeline = (m.pipeline_tag || '').toLowerCase();
-  const tags = (m.tags || []).map((t) => t.toLowerCase());
-  const idLower = m.id.toLowerCase();
+  const normalize = (tag: string) => tag.trim().toLowerCase().replace(/_/g, '-');
+  const tags = (m.tags || []).map(normalize);
 
   if (task === 'coding') {
-    return (
-      tags.some((t) => t.includes('code') || t.includes('coding')) ||
-      idLower.includes('coder') ||
-      idLower.includes('codestral') ||
-      idLower.includes('starcoder')
-    );
+    return tags.some((tag) => tag.includes('code') || tag.includes('coding'));
   }
-  if (task === 'conversational') {
-    return pipeline === 'conversational' || tags.includes('conversational') || idLower.includes('chat');
-  }
-  return pipeline === task || tags.includes(task);
+  return tags.includes(normalize(task));
 }
 
 function matchesFormat(m: HfModelSearchResult, format: FormatFilter): boolean {
@@ -415,9 +406,7 @@ export const bridgeService = {
   ): Promise<HfModelSearchResult[]> {
     if (window.electronAPI) {
       let apiFilter: string | undefined;
-      if (filters.task !== 'all' && filters.task !== 'coding') {
-        apiFilter = filters.task;
-      } else if (filters.format === 'gguf' || filters.format === 'safetensors') {
+      if (filters.format === 'gguf' || filters.format === 'safetensors') {
         apiFilter = filters.format;
       }
 

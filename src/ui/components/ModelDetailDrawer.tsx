@@ -841,8 +841,8 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
       {/* Tab Panel 1: Live Hugging Face Webpage */}
       {activeTab === 'webpage' && (
-        <div id="panel-webpage" role="tabpanel" aria-labelledby="tab-webpage" className="flex flex-1 flex-col overflow-hidden bg-white">
-          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-4 py-1.5 text-xs text-slate-700">
+        <div id="panel-webpage" role="tabpanel" aria-labelledby="tab-webpage" className="flex flex-1 flex-col overflow-hidden bg-[#090d16]">
+          <div className="flex items-center justify-between border-b border-white/[0.08] bg-[#0f172a] px-4 py-1.5 text-xs text-slate-300">
             <div className="flex items-center gap-2 font-mono text-[11px] truncate">
               <Globe className="h-3.5 w-3.5 text-[#0078d4] shrink-0" />
               <span className="truncate">https://huggingface.co/{model.id}</span>
@@ -856,7 +856,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
                     try { webviewRef.current.reload(); } catch {}
                   }
                 }}
-                className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center gap-1 rounded border border-white/[0.12] bg-white/[0.05] px-2 py-0.5 text-[11px] text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white"
               >
                 <RotateCw className="h-3 w-3" />
                 Reload
@@ -864,7 +864,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
               <button
                 type="button"
                 onClick={handleOpenInBrowser}
-                className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center gap-1 rounded border border-white/[0.12] bg-white/[0.05] px-2 py-0.5 text-[11px] text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white"
               >
                 <ExternalLink className="h-3 w-3" />
                 Open in Browser
@@ -874,10 +874,10 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
           {webviewError && (
             <div
               role="alert"
-              className="flex items-center justify-between gap-3 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-950"
+              className="flex items-center justify-between gap-3 border-b border-amber-400/30 bg-amber-950/50 px-4 py-2 text-xs text-amber-100"
             >
               <div className="flex items-center gap-2 min-w-0">
-                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" aria-hidden={true} />
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300" aria-hidden={true} />
                 <span className="truncate">
                   Unable to connect to Hugging Face Hub ({webviewError})
                 </span>
@@ -891,14 +891,14 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
                       try { webviewRef.current.reload(); } catch {}
                     }
                   }}
-                  className="rounded border border-amber-400 bg-white px-2.5 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100"
+                  className="rounded border border-amber-300/40 bg-amber-400/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-100 hover:bg-amber-400/20"
                 >
                   Reload
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab('readme')}
-                  className="rounded bg-amber-900 px-2.5 py-0.5 text-[11px] font-medium text-white hover:bg-amber-800"
+                  className="rounded bg-amber-700 px-2.5 py-0.5 text-[11px] font-medium text-white hover:bg-amber-600"
                 >
                   Switch to README
                 </button>
@@ -908,9 +908,10 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
           <webview
             ref={webviewRef}
             src={`https://huggingface.co/${model.id}`}
-            className={`flex-1 w-full h-full border-0 bg-white ${isResizing ? 'pointer-events-none' : ''}`}
+            className={`flex-1 w-full h-full border-0 bg-[#090d16] ${isResizing ? 'pointer-events-none' : ''}`}
             allowpopups={true}
           />
+          {/* Host styling prevents white bleed only; the isolated remote page controls its own appearance. */}
         </div>
       )}
 
