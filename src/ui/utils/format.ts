@@ -155,28 +155,105 @@ export function formatPipelineTag(tag?: string): string {
     .join(' ');
 }
 
-export function estimateMaxContextTokens(model: HfModelSearchResult): number {
-  const cardCtx = model.cardData?.['max_position_embeddings'] ?? model.cardData?.['context_length'];
-  if (typeof cardCtx === 'number' && cardCtx >= 2048) {
-    return cardCtx;
+export interface ContextProfile {
+  readonly trainedContext: number;
+  readonly maxContext: number;
+  readonly isRopeScaled: boolean;
+}
+
+export function estimateContextProfile(model: HfModelSearchResult): ContextProfile {
+  const cardData = model.cardData || {};
+  const cardMax = Number(cardData['max_position_embeddings'] || cardData['context_length']);
+  const cardOriginal = Number(cardData['original_max_position_embeddings']);
+  const rope = cardData['rope_scaling'];
+
+  if (cardMax && cardMax >= 2048) {
+    const trained = cardOriginal && cardOriginal < cardMax ? cardOriginal : cardMax;
+    return {
+      trainedContext: trained,
+      maxContext: cardMax,
+      isRopeScaled: !!rope || (!!cardOriginal && cardOriginal < cardMax),
+    };
   }
+
   const idLower = model.id.toLowerCase();
-  if (idLower.includes('llama-3.1') || idLower.includes('llama-3.2') || idLower.includes('llama-3.3')) {
-    return 131072;
+  const tagsLower = (model.tags || []).map((t) => t.toLowerCase());
+
+  // Check explicit context tags
+  for (const t of tagsLower) {
+    if (t === '256k') return { trainedContext: 32768, maxContext: 262144, isRopeScaled: true };
+    if (t === '128k') return { trainedContext: 8192, maxContext: 131072, isRopeScaled: true };
+    if (t === '64k') return { trainedContext: 8192, maxContext: 65536, isRopeScaled: true };
+    if (t === '32k') return { trainedContext: 8192, maxContext: 32768, isRopeScaled: true };
+    if (t === '16k') return { trainedContext: 16384, maxContext: 16384, isRopeScaled: false };
+    if (t === '8k') return { trainedContext: 8192, maxContext: 8192, isRopeScaled: false };
+    if (t === '4k') return { trainedContext: 4096, maxContext: 4096, isRopeScaled: false };
   }
-  if (idLower.includes('llama-3') || idLower.includes('gemma-2') || idLower.includes('gemma2')) {
-    return 8192;
+
+  // Known Architecture Family Context Defaults
+  if (idLower.includes('llama-3.1') || idLower.includes('llama-3.2') || idLower.includes('llama-3.3') || idLower.includes('llama3.1') || idLower.includes('llama3.2') || idLower.includes('llama3.3')) {
+    return { trainedContext: 8192, maxContext: 131072, isRopeScaled: true };
   }
-  if (idLower.includes('gemma-3') || idLower.includes('qwen2.5') || idLower.includes('qwq') || idLower.includes('deepseek-r1')) {
-    return 131072;
+  if (idLower.includes('llama-3') || idLower.includes('llama3')) {
+    return { trainedContext: 8192, maxContext: 8192, isRopeScaled: false };
+  }
+  if (idLower.includes('llama-2') || idLower.includes('llama2')) {
+    return { trainedContext: 4096, maxContext: 4096, isRopeScaled: false };
+  }
+  if (idLower.includes('qwen2.5') || idLower.includes('qwq') || idLower.includes('qwen3')) {
+    return { trainedContext: 32768, maxContext: 131072, isRopeScaled: true };
+  }
+  if (idLower.includes('qwen2') || idLower.includes('qwen1.5')) {
+    return { trainedContext: 32768, maxContext: 32768, isRopeScaled: false };
+  }
+  if (idLower.includes('deepseek-r1') || idLower.includes('deepseek-v3')) {
+    return { trainedContext: 64512, maxContext: 131072, isRopeScaled: true };
+  }
+  if (idLower.includes('gemma-4') || idLower.includes('gemma4')) {
+    return { trainedContext: 262144, maxContext: 262144, isRopeScaled: false };
+  }
+  if (idLower.includes('gemma-2') || idLower.includes('gemma2')) {
+    return { trainedContext: 8192, maxContext: 8192, isRopeScaled: false };
+  }
+  if (idLower.includes('gemma-3') || idLower.includes('gemma3')) {
+    return { trainedContext: 32768, maxContext: 131072, isRopeScaled: true };
   }
   if (idLower.includes('phi-4')) {
-    return 16384;
+    return { trainedContext: 16384, maxContext: 16384, isRopeScaled: false };
   }
-  if (idLower.includes('mistral-small')) {
-    return 32768;
+  if (idLower.includes('phi-3-mini-128k') || idLower.includes('phi-3-medium-128k')) {
+    return { trainedContext: 4096, maxContext: 131072, isRopeScaled: true };
   }
-  return 32768;
+  if (idLower.includes('phi-3')) {
+    return { trainedContext: 4096, maxContext: 4096, isRopeScaled: false };
+  }
+  if (idLower.includes('mistral-small') || idLower.includes('mistral-nemo') || idLower.includes('ministral')) {
+    return { trainedContext: 32768, maxContext: 32768, isRopeScaled: false };
+  }
+  if (idLower.includes('mistral') || idLower.includes('mixtral')) {
+    return { trainedContext: 32768, maxContext: 32768, isRopeScaled: false };
+  }
+  if (idLower.includes('lfm3') || idLower.includes('lfm-3') || idLower.includes('liquid')) {
+    return { trainedContext: 32768, maxContext: 32768, isRopeScaled: false };
+  }
+  if (idLower.includes('ltx') || idLower.includes('diffusion') || idLower.includes('image-to-image') || idLower.includes('video')) {
+    return { trainedContext: 4096, maxContext: 4096, isRopeScaled: false };
+  }
+  if (idLower.includes('command-r')) {
+    return { trainedContext: 131072, maxContext: 131072, isRopeScaled: false };
+  }
+  if (idLower.includes('solar')) {
+    return { trainedContext: 4096, maxContext: 4096, isRopeScaled: false };
+  }
+  if (idLower.includes('smollm')) {
+    return { trainedContext: 8192, maxContext: 8192, isRopeScaled: false };
+  }
+
+  return { trainedContext: 8192, maxContext: 32768, isRopeScaled: false };
+}
+
+export function estimateMaxContextTokens(model: HfModelSearchResult): number {
+  return estimateContextProfile(model).maxContext;
 }
 
 export interface BestFitResult {
@@ -185,13 +262,17 @@ export interface BestFitResult {
   readonly tokens: number;
 }
 
-const CONTEXT_STEPS = [131072, 65536, 32768, 16384, 8192, 4096, 2048] as const;
+// Granular context steps in 8K/16K divisions for accurate sizing feedback
+const GRANULAR_CONTEXT_STEPS = [
+  131072, 114688, 98304, 81920, 65536, 49152, 32768, 24576, 16384, 8192, 4096, 2048,
+] as const;
 
 export function calculateBestFitContext(
   model: HfModelSearchResult,
   hardware: HardwareProfile | null,
   activeGpuId?: string,
-  safeHeadroomMb = 512
+  safeHeadroomMb = 512,
+  quantOption?: QuantOption | null
 ): BestFitResult | null {
   if (!hardware || hardware.gpus.length === 0) return null;
 
@@ -210,10 +291,22 @@ export function calculateBestFitContext(
     })
     .reduce((sum, s) => sum + (s.size || 0), 0);
 
-  // Q4_K_M (4.85 bpw) with 1.15 runtime overhead
-  const weightBytes = Math.ceil(
-    (arch.paramBillions * 1_000_000_000 * (4.85 / 8) + extraArtifactBytes) * 1.15
-  );
+  // If a specific quantization is selected, use its exact size; otherwise evaluate at primary Q4_K_M
+  let weightBytes: number;
+  if (quantOption && quantOption.sizeBytes > 0) {
+    weightBytes = Math.ceil((quantOption.sizeBytes + extraArtifactBytes) * 1.15);
+  } else {
+    // Check if the repo has specific siblings to estimate accurate weight
+    const siblings = model.siblings || [];
+    const q4Sibling = siblings.find((s) => s.rfilename.toUpperCase().includes('Q4_K_M') || s.rfilename.toUpperCase().includes('Q4_0'));
+    if (q4Sibling && q4Sibling.size && q4Sibling.size > 0) {
+      weightBytes = Math.ceil((q4Sibling.size + extraArtifactBytes) * 1.15);
+    } else {
+      weightBytes = Math.ceil(
+        (arch.paramBillions * 1_000_000_000 * (4.85 / 8) + extraArtifactBytes) * 1.15
+      );
+    }
+  }
 
   if (weightBytes > effectiveAvailableVram) {
     return {
@@ -226,10 +319,12 @@ export function calculateBestFitContext(
   const kvAvailable = effectiveAvailableVram - weightBytes;
   const bytesPerToken = 2 * arch.layers * arch.kvHeads * arch.headDim * 2; // FP16 KV cache
   const rawSafeTokens = bytesPerToken > 0 ? Math.floor(kvAvailable / bytesPerToken) : 0;
-  const archMax = estimateMaxContextTokens(model);
+  
+  const ctxProfile = estimateContextProfile(model);
+  const archMax = ctxProfile.maxContext;
   const clamped = Math.min(rawSafeTokens, archMax);
 
-  const snapped = CONTEXT_STEPS.find((step) => clamped >= step);
+  const snapped = GRANULAR_CONTEXT_STEPS.find((step) => clamped >= step);
   if (!snapped) {
     return {
       status: 'minimal',
@@ -239,9 +334,12 @@ export function calculateBestFitContext(
   }
 
   const ctxLabel = formatContextLength(snapped);
+  const isMaxReached = snapped >= archMax;
+  const quantSuffix = quantOption ? ` (${quantOption.label})` : '';
+
   return {
     status: 'gpu',
-    label: snapped === 8192 && archMax === 8192 ? `Best Fit: ${ctxLabel} (Full GPU)` : `Best Fit: ${ctxLabel} context`,
+    label: isMaxReached ? `Best Fit: ${ctxLabel} (Full GPU)${quantSuffix}` : `Best Fit: ${ctxLabel} context${quantSuffix}`,
     tokens: snapped,
   };
 }

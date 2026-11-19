@@ -12,6 +12,9 @@ interface VramCacheEntry {
 let vramCache: VramCacheEntry | null = null;
 const VRAM_CACHE_TTL = 1500;
 
+let cachedProfile: { timestamp: number; profile: HardwareProfile } | null = null;
+const HARDWARE_CACHE_TTL = 10000;
+
 /**
  * Runs a PowerShell script via UTF-16LE Base64 EncodedCommand to avoid
  * command-line escaping bugs with $_, quotes, and multiline statements.
@@ -25,6 +28,11 @@ async function runPowerShell(script: string, timeoutMs: number = 4000): Promise<
 }
 
 export async function detectHardware(): Promise<HardwareProfile> {
+  const now = Date.now();
+  if (cachedProfile && (now - cachedProfile.timestamp) < HARDWARE_CACHE_TTL) {
+    return cachedProfile.profile;
+  }
+
   const gpus: GpuDeviceInfo[] = [];
 
   const totalRamBytes = os.totalmem();
@@ -176,7 +184,7 @@ export async function detectHardware(): Promise<HardwareProfile> {
     }
   }
 
-  return {
+  const profile: HardwareProfile = {
     gpus,
     systemRamTotalBytes: totalRamBytes,
     systemRamAvailableBytes: freeRamBytes,
@@ -186,6 +194,9 @@ export async function detectHardware(): Promise<HardwareProfile> {
     supportsAvx512: false,
     capturedAtIso: new Date().toISOString(),
   };
+
+  cachedProfile = { timestamp: now, profile };
+  return profile;
 }
 
 export async function getLiveVramUsage(gpuIndex: number = 0): Promise<{ totalBytes: number; usedBytes: number; freeBytes: number }> {
@@ -214,13 +225,10 @@ export async function getLiveVramUsage(gpuIndex: number = 0): Promise<{ totalByt
       if (stdout && stdout.trim()) {
         const parsed = JSON.parse(stdout.trim());
         const samples = Array.isArray(parsed) ? parsed : [parsed];
-        const hw = await detectHardware();
-
         // Find primary sample with non-zero usage or index 0
         const primarySample = samples.find((s) => Number(s.UsedBytes) > 0) || samples[0];
         const usedBytes = primarySample ? Number(primarySample.UsedBytes) || 0 : 0;
-        const gpu = hw.gpus[gpuIndex] || hw.gpus[0];
-        const totalBytes = gpu ? gpu.vramTotalBytes : 16 * 1024 * 1024 * 1024;
+        const totalBytes = cachedProfile?.profile?.gpus[gpuIndex]?.vramTotalBytes || 17163091968;
         const freeBytes = Math.max(0, totalBytes - usedBytes);
 
         usageMap.set(gpuIndex, { totalBytes, usedBytes, freeBytes });
@@ -231,9 +239,7 @@ export async function getLiveVramUsage(gpuIndex: number = 0): Promise<{ totalByt
   }
 
   if (usageMap.size === 0) {
-    const hw = await detectHardware();
-    const gpu = hw.gpus[gpuIndex] || hw.gpus[0];
-    const totalBytes = gpu ? gpu.vramTotalBytes : 16 * 1024 * 1024 * 1024;
+    const totalBytes = cachedProfile?.profile?.gpus[gpuIndex]?.vramTotalBytes || 17163091968;
     const usedBytes = Math.round(totalBytes * 0.15);
     const freeBytes = totalBytes - usedBytes;
     usageMap.set(gpuIndex, { totalBytes, usedBytes, freeBytes });

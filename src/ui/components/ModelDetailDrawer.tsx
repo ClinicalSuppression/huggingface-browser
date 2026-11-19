@@ -40,6 +40,7 @@ import { detectReasoningRequirements, getPurposePreset } from '../../core/preset
 import { DetectedRuntime, QuantOption } from '../types';
 import {
   buildQuantOptionsForModel,
+  calculateBestFitContext,
   estimateMaxContextTokens,
   estimateModelArchitecture,
   formatBytes,
@@ -402,11 +403,19 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
     const controller = new AbortController();
 
     // Fetch model config.json for trained vs. RoPE-scaled max context
-    fetch(`https://huggingface.co/${model.id}/raw/main/config.json`, {
-      signal: controller.signal,
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: Record<string, any> | null) => {
+    const fetchConfigUrl = (url: string) =>
+      fetch(url, { signal: controller.signal })
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null);
+
+    const baseModel = (model.cardData as any)?.base_model;
+    const baseModelId = typeof baseModel === 'string' ? baseModel : Array.isArray(baseModel) ? baseModel[0] : null;
+
+    fetchConfigUrl(`https://huggingface.co/${model.id}/raw/main/config.json`)
+      .then(async (data: Record<string, any> | null) => {
+        if (!data && baseModelId) {
+          data = await fetchConfigUrl(`https://huggingface.co/${baseModelId}/raw/main/config.json`);
+        }
         if (!data || controller.signal.aborted) return;
         const rawMax =
           (typeof data.max_position_embeddings === 'number' && data.max_position_embeddings) ||
@@ -596,6 +605,11 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
   const activePreset = getPurposePreset(presetIntent);
   const shortModelTag = `hf.co/${model.id}:${selectedQuant.id}`;
+
+  const quantBestFit = useMemo(() => {
+    return calculateBestFitContext(model, hardware, activeGpuId, safeHeadroomMb, selectedQuant);
+  }, [model, hardware, activeGpuId, safeHeadroomMb, selectedQuant]);
+
   const hasAuthorDefaults = Boolean(
     authorConfig &&
       (authorConfig.temperature !== undefined ||
@@ -987,10 +1001,15 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3
                   id="sizing-heading"
-                  className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-200"
+                  className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-200"
                 >
                   <Cpu className="h-4 w-4 text-[#38bdf8]" aria-hidden={true} />
-                  Real-Time Hardware Sizing ({activeGpu?.name || 'GPU'})
+                  <span>Real-Time Hardware Sizing ({activeGpu?.name || 'GPU'})</span>
+                  {quantBestFit && (
+                    <span className="rounded bg-[#0078d4]/20 border border-[#38bdf8]/30 px-2 py-0.5 text-[10.5px] font-mono normal-case tracking-normal text-[#7dd3fc]">
+                      {quantBestFit.label}
+                    </span>
+                  )}
                 </h3>
 
                 {fitResult && (

@@ -74,7 +74,8 @@ export class HuggingFaceClient {
    */
   public static async getModelArchitectureConfig(
     modelId: string,
-    token?: string
+    token?: string,
+    baseModel?: string
   ): Promise<{
     max_position_embeddings?: number;
     context_length?: number;
@@ -84,10 +85,20 @@ export class HuggingFaceClient {
     [key: string]: unknown;
   } | null> {
     try {
-      const raw = await this.request<Record<string, unknown>>(
-        `/${modelId}/raw/main/config.json`,
-        token
-      );
+      let raw: Record<string, unknown> | null = null;
+      try {
+        raw = await this.request<Record<string, unknown>>(
+          `/${modelId}/raw/main/config.json`,
+          token
+        );
+      } catch {
+        if (baseModel && baseModel !== modelId) {
+          raw = await this.request<Record<string, unknown>>(
+            `/${baseModel}/raw/main/config.json`,
+            token
+          );
+        }
+      }
       if (!raw) return null;
 
       const max_position_embeddings = Number(raw.max_position_embeddings) || undefined;
@@ -95,8 +106,8 @@ export class HuggingFaceClient {
       const rope_scaling = raw.rope_scaling as Record<string, unknown> | undefined;
       const original_max_position_embeddings = Number(raw.original_max_position_embeddings) || (rope_scaling ? Number(rope_scaling.original_max_position_embeddings) : undefined);
 
-      const is_rope_scaled = !!rope_scaling;
-      const trained_context = original_max_position_embeddings || context_length || max_position_embeddings || 8192;
+      const is_rope_scaled = !!rope_scaling || (!!original_max_position_embeddings && !!max_position_embeddings && original_max_position_embeddings < max_position_embeddings);
+      const trained_context = original_max_position_embeddings || context_length || (is_rope_scaled ? 8192 : max_position_embeddings) || 8192;
       const max_context = max_position_embeddings || context_length || 8192;
 
       return {

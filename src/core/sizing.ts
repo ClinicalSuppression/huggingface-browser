@@ -113,12 +113,13 @@ export function calculateBestFitContext(
   }
 
   const maxTokensRaw = Math.floor(availableVramForKv / bytesPerToken);
-  const standardSteps = [2048, 4096, 8192, 16384, 32768, 65536, 131072];
+  const standardSteps = [131072, 114688, 98304, 81920, 65536, 49152, 32768, 24576, 16384, 8192, 4096, 2048];
 
   let bestFitTokens = 0;
   for (const step of standardSteps) {
     if (step <= maxTokensRaw && step <= maxArchContext) {
       bestFitTokens = step;
+      break;
     }
   }
 
