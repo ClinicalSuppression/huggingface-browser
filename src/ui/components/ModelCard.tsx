@@ -1,11 +1,12 @@
 import React, { useMemo } from 'react';
-import { Download, Heart, Lock, Cpu, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Download, Heart, Lock } from 'lucide-react';
 import { HardwareProfile, HfModelSearchResult } from '../../types';
 import { detectReasoningRequirements } from '../../core/presets';
 import { HfTagPill } from './HfTagPill';
 import {
   calculateBestFitContext,
   formatCompactNumber,
+  formatContextLength,
   formatPipelineTag,
 } from '../utils/format';
 
@@ -164,43 +165,8 @@ export const ModelCard: React.FC<ModelCardProps> = ({
     [model, reasoningInfo.isThinkingModel]
   );
 
-  const renderBestFitBadge = () => {
-    if (!bestFit) return null;
-
-    if (bestFit.status === 'gpu') {
-      return (
-        <span
-          className="inline-flex items-center gap-1 truncate rounded border border-emerald-500/30 bg-emerald-500/12 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300"
-          title={bestFit.label}
-        >
-          <CheckCircle2 className="h-2.5 w-2.5 shrink-0" aria-hidden={true} />
-          <span className="truncate">{bestFit.label}</span>
-        </span>
-      );
-    }
-
-    if (bestFit.status === 'minimal') {
-      return (
-        <span
-          className="inline-flex items-center gap-1 truncate rounded border border-amber-500/30 bg-amber-500/12 px-1.5 py-0.5 text-[10px] font-medium text-amber-300"
-          title={bestFit.label}
-        >
-          <AlertTriangle className="h-2.5 w-2.5 shrink-0" aria-hidden={true} />
-          <span className="truncate">{bestFit.label}</span>
-        </span>
-      );
-    }
-
-    return (
-      <span
-        className="inline-flex items-center gap-1 truncate rounded border border-rose-500/30 bg-rose-500/12 px-1.5 py-0.5 text-[10px] font-medium text-rose-300"
-        title={bestFit.label}
-      >
-        <Cpu className="h-2.5 w-2.5 shrink-0" aria-hidden={true} />
-        <span className="truncate">{bestFit.label}</span>
-      </span>
-    );
-  };
+  const recommendedContext = bestFit && bestFit.tokens > 0 ? bestFit.tokens : null;
+  const contextEstimateText = `VRAM-based estimate: ${recommendedContext?.toLocaleString()} tokens, using estimated Q4 weights, FP16 KV cache, and reserved VRAM headroom. Actual model or runtime limits may differ.`;
 
   return (
     <button
@@ -255,11 +221,17 @@ export const ModelCard: React.FC<ModelCardProps> = ({
         )}
       </div>
 
-      {/* Compact Footer: Best Fit, Feature Badges & Stats */}
+      {/* Compact Footer: Recommended Context, Feature Badges & Stats */}
       <div className="mt-2.5 space-y-1.5 border-t border-white/[0.06] pt-2">
-        <div className="flex items-center justify-between gap-1.5">
-          {renderBestFitBadge()}
-        </div>
+        {recommendedContext !== null && (
+          <span
+            className="inline-flex max-w-full truncate rounded border border-sky-400/20 bg-sky-400/[0.07] px-1.5 py-0.5 text-[10px] font-medium text-sky-200"
+            title={contextEstimateText}
+            aria-label={`Estimated maximum context: ${formatContextLength(recommendedContext)}. VRAM-based estimate using estimated Q4 weights, FP16 KV cache, and reserved VRAM headroom. Actual model or runtime limits may differ.`}
+          >
+            Max context · {formatContextLength(recommendedContext)}
+          </span>
+        )}
 
         {featureBadges.length > 0 && (
           <div className="flex flex-wrap items-center gap-1">
