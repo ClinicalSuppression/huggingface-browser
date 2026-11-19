@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1
+
+- Replaced the one-click NSIS setup with an interactive Inno Setup installer.
+- Added install-directory selection, an optional desktop shortcut, and a post-install launch choice.
+- Kept the Windows x64 portable package.
+- Existing v1.0.0 NSIS installations must be removed through Windows Settings before installing this version; user data is kept outside the application folder.
+
 ## 1.0.0
 
 First stable release.

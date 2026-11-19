@@ -9,15 +9,9 @@ files:
   - package.json
 win:
   target:
-    - target: nsis
-      arch:
-        - x64
     - target: portable
       arch:
         - x64
   icon: assets/icon.ico
-nsis:
-  artifactName: ${productName}-${version}-Setup-${arch}.${ext}
-  include: build/installer.nsh
 portable:
-  artifactName: ${productName}-${version}-Portable-${arch}.${ext}
+  artifactName: HF-Browser-${version}-Portable-${arch}.${ext}

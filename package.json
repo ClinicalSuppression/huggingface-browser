@@ -1,6 +1,6 @@
 {
   "name": "huggingface-browser",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Windows 11 desktop model browser and local serving orchestrator for Hugging Face, Ollama, llama.cpp, xollama, and vLLM.",
   "main": "dist-electron/electron/main.js",
   "scripts": {
@@ -9,7 +9,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "start": "electron .",
-    "package": "npm run build && electron-builder --win nsis portable"
+    "package": "npm run build && electron-builder --win portable && node scripts/build-inno-installer.cjs"
   },
   "keywords": [
     "huggingface",

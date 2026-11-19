@@ -68,7 +68,17 @@ npm run build
 
 This compiles the Vite frontend client into `dist/` and the native Electron backend into `dist-electron/`.
 
-### 5. Run Verification Test Suite
+### 5. Package for Windows
+
+Install Inno Setup 6, then run:
+
+```bash
+npm run package
+```
+
+This creates the interactive Inno Setup installer and a portable Windows x64 executable. The installer lets you select a per-user install folder, optionally create a desktop shortcut, and choose whether to launch the app after setup.
+
+### 6. Run Verification Test Suite
 
 ```bash
 npm test
@@ -88,8 +98,10 @@ Executes the Vitest unit, integration, and performance benchmark suites.
 
 Major releases provide:
 - Source Archive: `huggingface-browser-vX.Y.Z-src.zip`
-- Application Packages: Windows x64 portable executable and NSIS setup executable
+- Application Packages: Windows x64 portable executable and interactive Inno Setup installer
 - Release notes and SHA-256 checksums for published assets
+
+To upgrade from the one-click NSIS installer used by v1.0.0, uninstall that version in Windows Settings > Apps before installing v1.0.1. User configuration and model data are stored separately from the application install folder and are not removed by the Inno installer.
 
 ## License
 
