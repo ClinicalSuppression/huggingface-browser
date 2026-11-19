@@ -90,6 +90,7 @@ export interface InstallPlan {
     readonly maxTimeoutSeconds: number;
   };
   readonly createdAtIso: string;
+  readonly modelStorageRoot?: string;
 }
 
 export type InstallPlanId = string;

@@ -1,6 +1,9 @@
 import { app, BrowserWindow, crashReporter, ipcMain, shell } from 'electron';
 import { randomUUID } from 'crypto';
 import path from 'path';
+import { validateInstallPath } from './install-path';
+import { createJobProgressThrottle } from './job-progress-throttle';
+import { guardedHandler, packagedAppUrl, safeExternalUrl, isAllowedHubUrl } from './ipc-security';
 import { detectHardware, getLiveVramUsage } from '../src/core/hardware';
 import { HuggingFaceClient } from '../src/core/hf-client';
 import { CredentialVault } from '../src/core/credential-vault';
@@ -11,6 +14,11 @@ import { CacheScanner } from '../src/core/cache-scanner';
 import { InstallPlan, InstallPlanId, PresetIntent, RuntimeId } from '../src/types';
 
 let mainWindow: BrowserWindow | null = null;
+const allowedAppUrl = process.env.VITE_DEV_SERVER_URL
+  ? new URL(process.env.VITE_DEV_SERVER_URL).href
+  : packagedAppUrl(path.join(__dirname, '../../dist/index.html'));
+const guardedHandle = (channel: string, handler: (event: Electron.IpcMainInvokeEvent, ...args: any[]) => any): void =>
+  ipcMain.handle(channel, guardedHandler(() => mainWindow?.webContents, allowedAppUrl, handler));
 const activeAbortControllers: Map<string, AbortController> = new Map();
 const installPlans = new Map<InstallPlanId, InstallPlan>();
 const settledPlans = new Set<InstallPlanId>();
@@ -33,6 +41,8 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      sandbox: true,
+      webSecurity: true,
     },
   });
 
@@ -42,6 +52,25 @@ async function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
   }
 
+  const win = mainWindow;
+  win.webContents.on('will-navigate', (event, url) => { if (url !== allowedAppUrl) event.preventDefault(); });
+  win.webContents.on('will-redirect', (event, url) => { if (url !== allowedAppUrl) event.preventDefault(); });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-attach-webview', (event, preferences, params) => {
+    if (!isAllowedHubUrl(params.src)) { event.preventDefault(); return; }
+    delete preferences.preload;
+    delete (params as any).allowpopups;
+    Object.assign(preferences, { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true });
+  });
+  win.webContents.on('did-attach-webview', (_event, webContents) => {
+    webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    webContents.on('will-navigate', (event, url) => {
+      if (!isAllowedHubUrl(url)) event.preventDefault();
+    });
+    webContents.on('will-redirect', (event, url) => {
+      if (!isAllowedHubUrl(url)) event.preventDefault();
+    });
+  });
   if (process.env.SMOKE_TEST === '1') {
     mainWindow.webContents.once('did-finish-load', () => {
       console.log('[MAIN_SMOKE] HTML and preload loaded cleanly in BrowserWindow!');
@@ -57,15 +86,15 @@ async function createWindow() {
 }
 
 // IPC Handlers
-ipcMain.handle('hardware:getProfile', async () => {
+guardedHandle('hardware:getProfile', async () => {
   return detectHardware();
 });
 
-ipcMain.handle('hardware:getLiveVramUsage', async (_event, gpuIndex?: number) => {
+guardedHandle('hardware:getLiveVramUsage', async (_event, gpuIndex?: number) => {
   return getLiveVramUsage(gpuIndex || 0);
 });
 
-ipcMain.handle('hf:search', async (_event, query: string, options: any) => {
+guardedHandle('hf:search', async (_event, query: string, options: any) => {
   const token = await CredentialVault.getHfToken();
   return HuggingFaceClient.searchModels({
     search: query,
@@ -74,46 +103,52 @@ ipcMain.handle('hf:search', async (_event, query: string, options: any) => {
   });
 });
 
-ipcMain.handle('hf:getModelDetails', async (_event, modelId: string) => {
+guardedHandle('hf:getModelDetails', async (_event, modelId: string) => {
   const token = await CredentialVault.getHfToken();
   return HuggingFaceClient.getModelDetails(modelId, token || undefined);
 });
 
-ipcMain.handle('hf:resolveArtifacts', async (_event, model: any) => {
+guardedHandle('hf:resolveArtifacts', async (_event, model: any) => {
   return HuggingFaceClient.resolveArtifacts(model);
 });
 
-ipcMain.handle('hf:getModelReadme', async (_event, modelId: string) => {
+guardedHandle('hf:getModelReadme', async (_event, modelId: string) => {
   const token = await CredentialVault.getHfToken();
   return HuggingFaceClient.getModelReadme(modelId, token || undefined);
 });
 
-ipcMain.handle('hf:getGenerationConfig', async (_event, modelId: string) => {
+guardedHandle('hf:getGenerationConfig', async (_event, modelId: string) => {
   const token = await CredentialVault.getHfToken();
   return HuggingFaceClient.getModelGenerationConfig(modelId, token || undefined);
 });
 
-ipcMain.handle('cache:scanLocalModels', async () => {
+guardedHandle('cache:scanLocalModels', async () => {
   return CacheScanner.scanLocalModels();
 });
 
-ipcMain.handle('vault:saveToken', async (_event, token: string, accountName?: string) => {
+guardedHandle('vault:saveToken', async (_event, token: string, accountName?: string) => {
+  if (typeof token !== 'string' || token.length === 0 || token.length > 4096) {
+    throw new Error('Hugging Face token must be a non-empty string no longer than 4096 characters');
+  }
   return CredentialVault.saveHfToken(token, accountName);
 });
 
-ipcMain.handle('vault:getToken', async (_event, accountName?: string) => {
-  return CredentialVault.getHfToken(accountName);
+guardedHandle('vault:hasToken', async (_event, accountName?: string) => {
+  return CredentialVault.hasHfToken(accountName);
 });
 
-ipcMain.handle('vault:removeToken', async (_event, accountName?: string) => {
+guardedHandle('vault:removeToken', async (_event, accountName?: string) => {
   return CredentialVault.removeHfToken(accountName);
 });
 
-ipcMain.handle('vault:validateToken', async (_event, token: string) => {
+guardedHandle('vault:validateToken', async (_event, token: string) => {
+  if (typeof token !== 'string' || token.length === 0 || token.length > 4096) {
+    return { valid: false, error: 'Hugging Face token must be a non-empty string no longer than 4096 characters' };
+  }
   return CredentialVault.validateHfToken(token);
 });
 
-ipcMain.handle('runtimes:detectAll', async () => {
+guardedHandle('runtimes:detectAll', async () => {
   const results = await globalAdapterRegistry.detectAll();
   return results.map(r => ({
     runtimeId: r.adapter.id,
@@ -124,7 +159,7 @@ ipcMain.handle('runtimes:detectAll', async () => {
   }));
 });
 
-ipcMain.handle('runtimes:listModels', async (_event, runtimeId?: RuntimeId) => {
+guardedHandle('runtimes:listModels', async (_event, runtimeId?: RuntimeId) => {
   if (runtimeId) {
     const adapter = globalAdapterRegistry.getAdapter(runtimeId);
     if (!adapter) return [];
@@ -139,13 +174,13 @@ ipcMain.handle('runtimes:listModels', async (_event, runtimeId?: RuntimeId) => {
   return globalAdapterRegistry.listAllInstalledModels();
 });
 
-ipcMain.handle('runtimes:evaluateCompatibility', async (_event, runtimeId: RuntimeId, artifacts: any, hw: any) => {
+guardedHandle('runtimes:evaluateCompatibility', async (_event, runtimeId: RuntimeId, artifacts: any, hw: any) => {
   const adapter = globalAdapterRegistry.getAdapter(runtimeId);
   if (!adapter) throw new Error(`Unknown runtime adapter: ${runtimeId}`);
   return adapter.evaluateCompatibility(artifacts, hw);
 });
 
-ipcMain.handle('install:createPlan', async (_event, runtimeId: RuntimeId, modelId: string, selectedFilename: string | undefined, options: any) => {
+guardedHandle('install:createPlan', async (_event, runtimeId: RuntimeId, modelId: string, selectedFilename: string | undefined, options: any, storagePath: unknown) => {
   if (runtimeId !== 'ollama') throw new Error(`Install is not supported for runtime: ${runtimeId}`);
   if (typeof modelId !== 'string' || !/^[^/]+\/[^/]+$/.test(modelId)) throw new Error('Invalid Hugging Face model ID');
   const adapter = globalAdapterRegistry.getAdapter(runtimeId);
@@ -153,8 +188,9 @@ ipcMain.handle('install:createPlan', async (_event, runtimeId: RuntimeId, modelI
   const token = await CredentialVault.getHfToken();
   const model = await HuggingFaceClient.getModelDetails(modelId, token || undefined);
   const artifacts = HuggingFaceClient.resolveArtifactTargets(model, selectedFilename);
+  const modelStorageRoot = validateInstallPath(storagePath);
   const proposedPlan = await adapter.createInstallPlan(artifacts, await detectHardware(), options);
-  const plan: InstallPlan = { ...proposedPlan, planId: randomUUID() };
+  const plan: InstallPlan = { ...proposedPlan, planId: randomUUID(), modelStorageRoot };
   if (plan.runtimeId !== 'ollama' || typeof plan.planId !== 'string' || !plan.planId ||
       typeof plan.modelRepo !== 'string' || !plan.modelRepo || typeof plan.revision !== 'string' ||
       !Array.isArray(plan.artifactFiles) || !Array.isArray(plan.steps) ||
@@ -165,7 +201,7 @@ ipcMain.handle('install:createPlan', async (_event, runtimeId: RuntimeId, modelI
   return plan;
 });
 
-ipcMain.handle('install:start', async (_event, planId: InstallPlanId) => {
+guardedHandle('install:start', async (_event, planId: InstallPlanId) => {
   if (typeof planId !== 'string' || !installPlans.has(planId)) throw new Error('Unknown install plan');
   if (activeAbortControllers.has(planId) || settledPlans.has(planId)) throw new Error('Install plan is already running or settled');
   const plan = installPlans.get(planId)!;
@@ -187,6 +223,9 @@ ipcMain.handle('install:start', async (_event, planId: InstallPlanId) => {
       ...(error ? { error_message: error } : {}),
       created_at: createdAt, updated_at: new Date().toISOString(),
     });
+  const progressWriter = createJobProgressThrottle(
+    ({ percent, downloaded }) => writeJob('downloading', percent, downloaded)
+  );
   try {
     LocalDatabase.upsertRuntime({
       runtime_id: 'ollama', display_name: adapter.displayName,
@@ -202,7 +241,7 @@ ipcMain.handle('install:start', async (_event, planId: InstallPlanId) => {
         if (mainWindow) {
           mainWindow.webContents.send('install:progress', { ...progress, planId: plan.planId });
         }
-        writeJob('downloading', progress.percentComplete, progress.bytesDownloaded);
+        progressWriter.update({ percent: progress.percentComplete, downloaded: progress.bytesDownloaded });
       },
       abortController.signal,
       { downloadToken: downloadToken || undefined }
@@ -211,6 +250,7 @@ ipcMain.handle('install:start', async (_event, planId: InstallPlanId) => {
     const status = success ? 'completed' : abortController.signal.aborted ? 'cancelled' : 'failed';
     terminalAttempted = true;
     settledPlans.add(plan.planId);
+    progressWriter.clear();
     writeJob(status, success ? 100 : lastProgress.percent, success ? plan.totalDownloadBytes : lastProgress.downloaded,
       success ? undefined : abortController.signal.aborted ? 'Installation cancelled' : 'Installation failed');
     return { success, ...(!success ? { error: abortController.signal.aborted ? 'Installation cancelled' : 'Installation failed' } : {}) };
@@ -218,6 +258,7 @@ ipcMain.handle('install:start', async (_event, planId: InstallPlanId) => {
     if (!terminalAttempted) {
       terminalAttempted = true;
       settledPlans.add(plan.planId);
+      progressWriter.clear();
       try {
         writeJob(abortController.signal.aborted ? 'cancelled' : 'failed', lastProgress.percent, lastProgress.downloaded,
           String(err?.message || err));
@@ -234,7 +275,7 @@ ipcMain.handle('install:start', async (_event, planId: InstallPlanId) => {
   }
 });
 
-ipcMain.handle('install:cancel', async (_event, planId: string) => {
+guardedHandle('install:cancel', async (_event, planId: string) => {
   const controller = activeAbortControllers.get(planId);
   if (controller) {
     controller.abort();
@@ -243,7 +284,7 @@ ipcMain.handle('install:cancel', async (_event, planId: string) => {
   return false;
 });
 
-ipcMain.handle('verify:runSmokeTest', async (_event, runtimeId: RuntimeId, modelTag: string) => {
+guardedHandle('verify:runSmokeTest', async (_event, runtimeId: RuntimeId, modelTag: string) => {
   const adapter = globalAdapterRegistry.getAdapter(runtimeId);
   if (!adapter) throw new Error(`Unknown runtime adapter: ${runtimeId}`);
 
@@ -269,19 +310,20 @@ ipcMain.handle('verify:runSmokeTest', async (_event, runtimeId: RuntimeId, model
   return adapter.verifyInstall(plan);
 });
 
-ipcMain.handle('presets:get', async (_event, intent: PresetIntent) => {
+guardedHandle('presets:get', async (_event, intent: PresetIntent) => {
   return getPurposePreset(intent);
 });
 
-ipcMain.handle('browser:openExternal', async (_event, url: string) => {
-  if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
-    await shell.openExternal(url);
+guardedHandle('browser:openExternal', async (_event, url: string) => {
+  const safeUrl = safeExternalUrl(url);
+  if (safeUrl) {
+    await shell.openExternal(safeUrl);
     return true;
   }
   return false;
 });
 
-ipcMain.handle('jobs:list', async () => {
+guardedHandle('jobs:list', async () => {
   return LocalDatabase.getJobs();
 });
 

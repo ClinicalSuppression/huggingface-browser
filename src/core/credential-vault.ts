@@ -7,6 +7,13 @@ import os from 'os';
 const execAsync = promisify(exec);
 const VAULT_RESOURCE = 'HuggingFaceModelBrowser';
 const MACHINE_SECRET = os.hostname() + (process.env.COMPUTERNAME || '') + os.platform() + os.arch();
+const ACCOUNT_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/;
+
+function validateAccountName(accountName: string): void {
+  if (!ACCOUNT_NAME_PATTERN.test(accountName)) {
+    throw new Error('Invalid credential account name');
+  }
+}
 
 async function runPowerShell(script: string, timeoutMs: number = 3000): Promise<string> {
   const b64 = Buffer.from(script, 'utf16le').toString('base64');
@@ -54,7 +61,8 @@ export class CredentialVault {
    * Saves a Hugging Face User Access Token into Windows Credential Manager
    * or memory fallback using salted AES-256-GCM encryption.
    */
-  public static async saveHfToken(token: string, accountName: string = 'default'): Promise<boolean> {
+  public static async saveHfToken(token: string, accountName: string = 'default'): Promise<{ saved: boolean; persistent: boolean }> {
+    validateAccountName(accountName);
     const encryptedToken = encryptToken(token);
     if (process.platform === 'win32') {
       try {
@@ -70,19 +78,20 @@ export class CredentialVault {
         `;
         await runPowerShell(psScript);
         this.memoryTokens.set(accountName, encryptedToken);
-        return true;
+        return { saved: true, persistent: true };
       } catch (err) {
         console.error('Failed to save token to Windows PasswordVault, using fallback:', err);
       }
     }
     this.memoryTokens.set(accountName, encryptedToken);
-    return true;
+    return { saved: true, persistent: false };
   }
 
   /**
    * Retrieves and decrypts the Hugging Face User Access Token from Windows Credential Manager or memory.
    */
   public static async getHfToken(accountName: string = 'default'): Promise<string | null> {
+    validateAccountName(accountName);
     let storedValue: string | null = null;
     if (process.platform === 'win32') {
       try {
@@ -113,9 +122,35 @@ export class CredentialVault {
   }
 
   /**
+   * Checks whether a token is stored without decrypting or returning its value.
+   */
+  public static async hasHfToken(accountName: string = 'default'): Promise<boolean> {
+    validateAccountName(accountName);
+    if (process.platform === 'win32') {
+      try {
+        const psScript = `
+          $vault = New-Object Windows.Security.Credentials.PasswordVault
+          try {
+            $cred = $vault.Retrieve('${VAULT_RESOURCE}', '${accountName}')
+            Write-Output "true"
+          } catch {
+            Write-Output "false"
+          }
+        `;
+        const stdout = await runPowerShell(psScript);
+        if (stdout.trim() === 'true') return true;
+      } catch {
+        // Fall back to memory
+      }
+    }
+    return this.memoryTokens.has(accountName);
+  }
+
+  /**
    * Deletes the Hugging Face User Access Token from Windows Credential Manager and memory.
    */
   public static async removeHfToken(accountName: string = 'default'): Promise<boolean> {
+    validateAccountName(accountName);
     if (process.platform === 'win32') {
       try {
         const psScript = `

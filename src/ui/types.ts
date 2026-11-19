@@ -155,8 +155,8 @@ export interface IElectronAPI {
   getModelReadme(modelId: string): Promise<string | null>;
   getGenerationConfig(modelId: string): Promise<{ temperature?: number; top_p?: number; repetition_penalty?: number; top_k?: number } | null>;
   scanLocalModels(): Promise<unknown[]>;
-  saveToken(token: string, accountName?: string): Promise<boolean>;
-  getToken(accountName?: string): Promise<string | null>;
+  saveToken(token: string, accountName?: string): Promise<{ saved: boolean; persistent: boolean }>;
+  hasToken(accountName?: string): Promise<boolean>;
   removeToken(accountName?: string): Promise<boolean>;
   validateToken(token: string): Promise<{ valid: boolean; username?: string; error?: string }>;
   detectRuntimes(): Promise<DetectedRuntime[]>;
@@ -170,7 +170,8 @@ export interface IElectronAPI {
     runtimeId: RuntimeId,
     modelId: string,
     selectedFilename: string | undefined,
-    options?: Record<string, unknown>
+    options?: Record<string, unknown>,
+    modelStoragePath?: string
   ): Promise<InstallPlan>;
   startInstall(planId: string): Promise<{ success: boolean; error?: string }>;
   cancelInstall(planId: string): Promise<boolean>;

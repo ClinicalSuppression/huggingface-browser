@@ -14,16 +14,21 @@ import {
 import { evaluateHardwareFit } from '../core/sizing';
 import { parseQuantFromFilename } from '../core/gguf-parser';
 import path from 'path';
-import os from 'os';
+import fs from 'fs';
 import { DownloadManager } from '../core/download-manager';
 
 export class OllamaAdapter implements IRuntimeAdapter {
   readonly id: RuntimeId = 'ollama';
   readonly displayName: string = 'Ollama';
   protected endpointUrl: string;
+  private readonly availableSpace: (directory: string) => Promise<number>;
 
-  constructor(endpointUrl: string = 'http://127.0.0.1:11434') {
+  constructor(endpointUrl: string = 'http://127.0.0.1:11434', availableSpace?: (directory: string) => Promise<number>) {
     this.endpointUrl = endpointUrl;
+    this.availableSpace = availableSpace ?? (async directory => {
+      const stat = await fs.promises.statfs(directory);
+      return stat.bavail * stat.bsize;
+    });
   }
 
   async detect(): Promise<RuntimeEnvironment | null> {
@@ -205,7 +210,18 @@ export class OllamaAdapter implements IRuntimeAdapter {
       throw new Error('Ollama supports only a single GGUF artifact');
     }
     const artifact = plan.artifactFiles[0];
-    const localPath = path.join(os.homedir(), '.cache', 'hf-browser', 'models', plan.planId, path.basename(artifact.destinationRelativePath));
+    const filename = path.basename(artifact.destinationRelativePath);
+    if (!filename || filename === '.' || filename === '..' || filename !== artifact.destinationRelativePath.replace(/\\/g, '/').split('/').pop()) {
+      throw new Error('Invalid artifact filename');
+    }
+    const root = plan.modelStorageRoot;
+    if (!root || !path.isAbsolute(root)) throw new Error('Install plan has no valid model storage root');
+    const planDirectory = path.resolve(root, plan.planId);
+    const localPath = path.resolve(planDirectory, filename);
+    if (!localPath.startsWith(planDirectory + path.sep)) throw new Error('Artifact path escapes install directory');
+    await fs.promises.mkdir(planDirectory, { recursive: true });
+    const available = await this.availableSpace(planDirectory);
+    if (available < plan.requiredDiskSpaceBytes) throw new Error('Insufficient disk space for model installation');
     await DownloadManager.downloadFile({
       planId: plan.planId,
       url: artifact.remoteUrl,

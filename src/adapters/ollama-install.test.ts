@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import http from 'http';
 import os from 'os';
 import fs from 'fs';
@@ -14,12 +14,9 @@ const hw: HardwareProfile = {
 
 describe('Ollama executeInstall', () => {
   const servers: http.Server[] = [];
-  let homeSpy: ReturnType<typeof vi.spyOn> | undefined;
   let tempHome: string;
 
   afterEach(async () => {
-    homeSpy?.mockRestore();
-    homeSpy = undefined;
     await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve()))));
     if (tempHome) fs.rmSync(tempHome, { recursive: true, force: true });
   });
@@ -35,7 +32,6 @@ describe('Ollama executeInstall', () => {
 
   async function runCreateResponse(response: string): Promise<{ error?: Error; body?: Record<string, unknown>; downloaded?: Buffer }> {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ollama-test-'));
-    homeSpy = vi.spyOn(os, 'homedir').mockReturnValue(tempHome);
     const payload = Buffer.from('valid test gguf');
     const downloadUrl = await server((_req, res) => { res.writeHead(200, { 'content-length': payload.length }); res.end(payload); });
     let body = '';
@@ -48,12 +44,12 @@ describe('Ollama executeInstall', () => {
       destinationRelativePath: 'model.Q4_K_M.gguf', expectedSizeBytes: payload.length,
       role: 'primary_weights',
     };
-    const plan = await new OllamaAdapter(endpoint).createInstallPlan([artifact], hw);
+    const plan = { ...(await new OllamaAdapter(endpoint).createInstallPlan([artifact], hw)), modelStorageRoot: path.join(tempHome, 'custom-root') };
     try {
       await new OllamaAdapter(endpoint).executeInstall(plan, () => {}, new AbortController().signal);
       return {
         body: JSON.parse(body),
-        downloaded: fs.readFileSync(path.join(tempHome, '.cache', 'hf-browser', 'models', plan.planId, artifact.destinationRelativePath)),
+        downloaded: fs.readFileSync(path.join(tempHome, 'custom-root', plan.planId, artifact.destinationRelativePath)),
       };
     } catch (error) {
       return { error: error as Error, body: JSON.parse(body) };
@@ -66,7 +62,7 @@ describe('Ollama executeInstall', () => {
     expect(result.downloaded?.toString()).toBe('valid test gguf');
     expect(result.body?.model).toBe('hf-org-model-model.q4_k_m');
     expect(result.body?.model).toMatch(/^[a-z0-9._-]+$/);
-    expect(String(result.body?.modelfile)).toContain(path.join(tempHome, '.cache', 'hf-browser', 'models'));
+    expect(String(result.body?.modelfile)).toContain(path.join(tempHome, 'custom-root'));
   });
 
   it.each([
@@ -75,5 +71,25 @@ describe('Ollama executeInstall', () => {
   ])('rejects stream %s', async (stream, expected) => {
     const result = await runCreateResponse(stream);
     expect(result.error?.message).toContain(expected);
+  });
+
+  it('rejects insufficient disk space before download or import requests', async () => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ollama-test-'));
+    let downloads = 0;
+    let imports = 0;
+    const downloadUrl = await server((_req, res) => { downloads++; res.end('unexpected'); });
+    const endpoint = await server((_req, res) => { imports++; res.end('unexpected'); });
+    const artifact: ArtifactFileTarget = {
+      fileId: 'org/model/model.Q4_K_M.gguf', remoteUrl: downloadUrl,
+      destinationRelativePath: 'model.Q4_K_M.gguf', expectedSizeBytes: 100,
+      role: 'primary_weights',
+    };
+    const adapter = new OllamaAdapter(endpoint, async () => 0);
+    const plan = { ...(await adapter.createInstallPlan([artifact], hw)), modelStorageRoot: path.join(tempHome, 'root') };
+
+    await expect(adapter.executeInstall(plan, () => {}, new AbortController().signal))
+      .rejects.toThrow('Insufficient disk space');
+    expect(downloads).toBe(0);
+    expect(imports).toBe(0);
   });
 });

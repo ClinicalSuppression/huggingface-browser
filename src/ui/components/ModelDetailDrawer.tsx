@@ -56,6 +56,7 @@ interface ModelDetailDrawerProps {
   activeGpuId?: string;
   safeHeadroomMb?: number;
   defaultPresetIntent?: PresetIntent;
+  modelStoragePath?: string;
   runtimes: DetectedRuntime[];
   onClose: () => void;
   onDeploySuccess?: (runtimeId: RuntimeId, modelTag: string, sizeBytes: number) => void;
@@ -211,11 +212,14 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   activeGpuId,
   safeHeadroomMb = 512,
   defaultPresetIntent = 'instruct',
+  modelStoragePath,
   runtimes,
   onClose,
   onDeploySuccess,
 }) => {
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  const drawerRef = useRef<HTMLElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const webviewRef = useRef<any>(null);
 
@@ -288,14 +292,15 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
   // Drag-to-resize panel width (default ~560px / 38% screen width, persisted in localStorage)
   const [drawerWidth, setDrawerWidth] = useState<number>(() => {
+    const viewportWidth = typeof window === 'undefined' ? 580 : window.innerWidth;
     try {
       const saved = localStorage.getItem('hf_browser_drawer_width');
       if (saved) {
         const parsed = Number(saved);
-        if (parsed >= 420 && parsed <= 1600) return parsed;
+        if (parsed >= 320 && parsed <= 1600) return Math.min(parsed, viewportWidth);
       }
     } catch {}
-    return Math.min(580, Math.max(480, Math.round(window.innerWidth * 0.38)));
+    return Math.min(viewportWidth, Math.max(320, Math.min(580, Math.round(viewportWidth * 0.9))));
   });
   const [isResizing, setIsResizing] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -311,8 +316,8 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
     const handleMouseMove = (e: MouseEvent) => {
       const newWidth = window.innerWidth - e.clientX;
-      const minWidth = 420;
-      const maxWidth = Math.round(window.innerWidth * 0.85);
+      const minWidth = Math.min(320, window.innerWidth);
+      const maxWidth = window.innerWidth;
       const clamped = Math.max(minWidth, Math.min(maxWidth, newWidth));
       setDrawerWidth(clamped);
       if (isMaximized) setIsMaximized(false);
@@ -522,14 +527,48 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
   // Escape key closes drawer
   useEffect(() => {
     if (!model) return;
+    previousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
         onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const drawer = drawerRef.current;
+      if (!drawer) return;
+      const focusable = Array.from(
+        drawer.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => element.getAttribute('aria-hidden') !== 'true');
+      if (focusable.length === 0) {
+        e.preventDefault();
+        drawer.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !drawer.contains(document.activeElement))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !drawer.contains(document.activeElement))) {
+        e.preventDefault();
+        first.focus();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [model, onClose]);
+
+  useEffect(() => {
+    return () => {
+      const previousFocus = previousFocusRef.current;
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, []);
 
   // Webview load error resilience
   useEffect(() => {
@@ -649,7 +688,8 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
         selectedQuant.sizeBytes,
         (prog) => setDeployProgress(prog),
         controller.signal,
-        selectedQuant.filename
+        selectedQuant.filename,
+        modelStoragePath
       );
       if (result.success) {
         setDeployDone(true);
@@ -688,10 +728,13 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
   return (
     <aside
-      role="region"
-      aria-label="Model Inspector &amp; Webpage"
+      ref={drawerRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="drawer-model-title"
+      tabIndex={-1}
       className="relative h-full shrink-0 flex flex-col border-l border-white/[0.1] shadow-2xl bg-[#090d16] select-none"
-      style={{ width: `${drawerWidth}px` }}
+      style={{ width: `${Math.min(drawerWidth, window.innerWidth)}px`, maxWidth: '100vw' }}
     >
       {/* Draggable Left Resize Handle */}
       <div
@@ -1400,12 +1443,20 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
 
             {/* Deployment Progress & Test Results */}
             {(isDeploying || deployProgress || deployDone || deployCancelled || deployError) && (
-              <section
-                aria-live="polite"
-                aria-atomic="true"
-                role={deployError ? 'alert' : 'status'}
+            <section
                 className="fluent-card rounded-xl p-4 space-y-2.5"
               >
+                <p className="sr-only" role={deployError ? 'alert' : 'status'} aria-live={deployError ? 'assertive' : 'polite'} aria-atomic="true">
+                  {cancelRequested
+                    ? 'Cancellation requested; waiting for deployment to stop.'
+                    : deployDone
+                      ? `Deployment to ${selectedRuntime} succeeded.`
+                      : deployCancelled
+                        ? 'Deployment cancelled.'
+                        : deployError
+                          ? `Deployment failed: ${deployError}`
+                          : `Deployment progress: ${deployProgress?.stepDescription || 'Preparing deployment.'}${deployProgress && Number.isFinite(deployProgress.percentComplete) ? ` ${deployProgress.percentComplete}% complete.` : ''}`}
+                </p>
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium text-slate-200">
                     {cancelRequested

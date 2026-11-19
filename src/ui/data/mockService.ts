@@ -17,6 +17,7 @@ import {
   TaskFilter,
 } from '../types';
 import { estimateModelArchitecture } from '../utils/format';
+import { DEFAULT_APP_SETTINGS } from '../utils/format';
 
 const UNCENSORED_KEYWORDS = [
   'ara',
@@ -471,7 +472,8 @@ export const bridgeService = {
     totalBytes: number,
     onProgress: (p: InstallProgress) => void,
     signal: AbortSignal,
-    selectedFilename?: string
+    selectedFilename?: string,
+    modelStoragePath?: string
   ): Promise<{ success: boolean; error?: string }> {
     if (window.electronAPI) {
       let planId: string | undefined;
@@ -480,7 +482,7 @@ export const bridgeService = {
       if (signal.aborted) return { success: false, error: 'Deployment cancelled by user.' };
       signal.addEventListener('abort', cancel, { once: true });
       try {
-        const plan = await window.electronAPI.createInstallPlan(runtimeId, modelId, selectedFilename);
+        const plan = await window.electronAPI.createInstallPlan(runtimeId, modelId, selectedFilename, undefined, modelStoragePath || DEFAULT_APP_SETTINGS.modelStoragePath);
         planId = plan.planId;
         unsubscribe = window.electronAPI.onInstallProgress(progress => {
           if (progress.planId === planId) onProgress(progress);
@@ -574,15 +576,15 @@ export const bridgeService = {
     return [];
   },
 
-  async getToken(): Promise<string | null> {
-    if (window.electronAPI) return window.electronAPI.getToken();
-    return memoryToken;
+  async hasToken(): Promise<boolean> {
+    if (window.electronAPI) return window.electronAPI.hasToken();
+    return memoryToken !== null;
   },
 
-  async saveToken(token: string): Promise<boolean> {
+  async saveToken(token: string): Promise<{ saved: boolean; persistent: boolean }> {
     if (window.electronAPI) return window.electronAPI.saveToken(token);
     memoryToken = token;
-    return true;
+    return { saved: true, persistent: false };
   },
 
   async removeToken(): Promise<boolean> {

@@ -12,12 +12,11 @@ export const SettingsVaultView: React.FC = () => {
   const [isWorking, setIsWorking] = useState(false);
 
   useEffect(() => {
-    bridgeService.getToken().then((existing) => {
-      if (existing) {
-        setToken(existing);
-        setHasStoredToken(true);
-      }
-    });
+    bridgeService.hasToken()
+      .then(setHasStoredToken)
+      .catch(() => {
+        setStatusMsg({ type: 'error', text: 'Could not check for a saved token.' });
+      });
   }, []);
 
   const handleSaveAndValidate = async (e: React.FormEvent) => {
@@ -26,30 +25,45 @@ export const SettingsVaultView: React.FC = () => {
     setIsWorking(true);
     setStatusMsg(null);
 
-    const validation = await bridgeService.validateToken(token.trim());
-    if (!validation.valid) {
-      setStatusMsg({
-        type: 'error',
-        text: validation.error || 'Invalid Hugging Face token.',
-      });
-      setIsWorking(false);
-      return;
-    }
+    try {
+      const validation = await bridgeService.validateToken(token.trim());
+      if (!validation.valid) {
+        setStatusMsg({
+          type: 'error',
+          text: validation.error || 'Invalid Hugging Face token.',
+        });
+        return;
+      }
 
-    await bridgeService.saveToken(token.trim());
-    setHasStoredToken(true);
-    setStatusMsg({
-      type: 'success',
-      text: `Token validated for "${validation.username || 'HF User'}" and encrypted in Windows Credential Vault.`,
-    });
-    setIsWorking(false);
+      const saveResult = await bridgeService.saveToken(token.trim());
+      if (!saveResult.saved) {
+        setStatusMsg({ type: 'error', text: 'Token could not be saved.' });
+        return;
+      }
+
+      setHasStoredToken(true);
+      setStatusMsg({
+        type: 'success',
+        text: saveResult.persistent
+          ? `Token validated for "${validation.username || 'HF User'}" and encrypted in Windows Credential Vault.`
+          : `Token validated for "${validation.username || 'HF User'}" and is available only in memory for this session; it was not persisted.`,
+      });
+    } catch {
+      setStatusMsg({ type: 'error', text: 'Could not validate or save the token.' });
+    } finally {
+      setIsWorking(false);
+    }
   };
 
   const handleRemove = async () => {
-    await bridgeService.removeToken();
-    setToken('');
-    setHasStoredToken(false);
-    setStatusMsg({ type: 'success', text: 'Token removed from Windows Credential Vault.' });
+    try {
+      await bridgeService.removeToken();
+      setToken('');
+      setHasStoredToken(false);
+      setStatusMsg({ type: 'success', text: 'Token removed from storage.' });
+    } catch {
+      setStatusMsg({ type: 'error', text: 'Could not remove the saved token.' });
+    }
   };
 
   return (
@@ -59,7 +73,7 @@ export const SettingsVaultView: React.FC = () => {
           HF Access Token
         </h1>
         <p className="mt-0.5 text-xs text-slate-400">
-          Manage your Hugging Face access token for gated models (Llama, Gemma) via salted AES-256-GCM &amp; OS storage
+          Manage your Hugging Face access token for gated models. When available, it is saved with Windows Credential Vault; otherwise it is kept in memory for this session only.
         </p>
       </header>
 
@@ -74,7 +88,7 @@ export const SettingsVaultView: React.FC = () => {
                 <div>
                   <h2 className="text-sm font-semibold text-white">Hugging Face Access Token</h2>
                   <p className="text-xs text-slate-400">
-                    Protected with Electron safeStorage / Windows DPAPI
+                    Saved tokens use Windows Credential Vault. Memory-only fallback is not persisted and is lost when the app closes.
                   </p>
                 </div>
               </div>
@@ -82,7 +96,7 @@ export const SettingsVaultView: React.FC = () => {
               {hasStoredToken && (
                 <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
                   <ShieldCheck className="h-3.5 w-3.5" aria-hidden={true} />
-                  Vaulted
+                  Token available
                 </span>
               )}
             </div>

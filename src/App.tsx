@@ -262,6 +262,7 @@ export function App() {
           activeGpuId={settings.activeGpuId}
           safeHeadroomMb={settings.safeVramHeadroomMb}
           defaultPresetIntent={settings.defaultPresetIntent}
+          modelStoragePath={settings.modelStoragePath}
           runtimes={runtimes}
           onClose={() => setSelectedModel(null)}
           onDeploySuccess={handleDeploySuccess}

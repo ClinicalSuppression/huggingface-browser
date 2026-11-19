@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { applyDiscoveryFilters, selectHubFilter } from './mockService';
+import { describe, expect, it, vi } from 'vitest';
+import { applyDiscoveryFilters, bridgeService, selectHubFilter } from './mockService';
 import { DiscoveryFilters } from '../types';
 import { HfModelSearchResult } from '../../types';
 
@@ -51,5 +51,44 @@ describe('Hub API filter selection', () => {
 
   it('leaves coding without a format filter', () => {
     expect(selectHubFilter(withFilters('coding'))).toBeUndefined();
+  });
+});
+
+describe('model storage path propagation', () => {
+  it('passes the selected path to Electron when creating an install plan', async () => {
+    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const createInstallPlan = vi.fn().mockResolvedValue({ planId: 'plan-1' });
+    const startInstall = vi.fn().mockResolvedValue({ success: true });
+    const cancelInstall = vi.fn().mockResolvedValue(false);
+    const onInstallProgress = vi.fn().mockReturnValue(() => {});
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: { electronAPI: {
+      createInstallPlan,
+      startInstall,
+      cancelInstall,
+      onInstallProgress,
+    } } });
+
+    try {
+      await bridgeService.simulateOrRunDeploy(
+        'ollama',
+        'owner/model',
+        1,
+        () => {},
+        new AbortController().signal,
+        'model.Q4_K_M.gguf',
+        'D:\\models\\custom-storage'
+      );
+
+      expect(createInstallPlan).toHaveBeenCalledWith(
+        'ollama',
+        'owner/model',
+        'model.Q4_K_M.gguf',
+        undefined,
+        'D:\\models\\custom-storage'
+      );
+    } finally {
+      if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
+      else delete (globalThis as { window?: unknown }).window;
+    }
   });
 });

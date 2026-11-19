@@ -26,8 +26,8 @@ export interface IElectronAPI {
   getGenerationConfig(modelId: string): Promise<{ temperature?: number; top_p?: number; repetition_penalty?: number; top_k?: number } | null>;
 
   // Credential Vault
-  saveToken(token: string, accountName?: string): Promise<boolean>;
-  getToken(accountName?: string): Promise<string | null>;
+  saveToken(token: string, accountName?: string): Promise<{ saved: boolean; persistent: boolean }>;
+  hasToken(accountName?: string): Promise<boolean>;
   removeToken(accountName?: string): Promise<boolean>;
   validateToken(token: string): Promise<{ valid: boolean; username?: string; error?: string }>;
 
@@ -37,7 +37,7 @@ export interface IElectronAPI {
   evaluateCompatibility(runtimeId: RuntimeId, artifacts: ArtifactFileTarget[], hw: HardwareProfile): Promise<CompatibilityReport>;
 
   // Install & Verification
-  createInstallPlan(runtimeId: RuntimeId, modelId: string, selectedFilename: string | undefined, options?: Record<string, unknown>): Promise<InstallPlan>;
+  createInstallPlan(runtimeId: RuntimeId, modelId: string, selectedFilename: string | undefined, options?: Record<string, unknown>, modelStoragePath?: string): Promise<InstallPlan>;
   startInstall(planId: InstallPlanId): Promise<{ success: boolean; error?: string }>;
   cancelInstall(planId: string): Promise<boolean>;
   onInstallProgress(callback: (progress: InstallProgress) => void): () => void;
@@ -61,7 +61,7 @@ const electronAPI: IElectronAPI = {
   getGenerationConfig: (modelId) => ipcRenderer.invoke('hf:getGenerationConfig', modelId),
 
   saveToken: (token, accountName) => ipcRenderer.invoke('vault:saveToken', token, accountName),
-  getToken: (accountName) => ipcRenderer.invoke('vault:getToken', accountName),
+  hasToken: (accountName) => ipcRenderer.invoke('vault:hasToken', accountName),
   removeToken: (accountName) => ipcRenderer.invoke('vault:removeToken', accountName),
   validateToken: (token) => ipcRenderer.invoke('vault:validateToken', token),
 
@@ -69,7 +69,7 @@ const electronAPI: IElectronAPI = {
   listRuntimeModels: (runtimeId) => ipcRenderer.invoke('runtimes:listModels', runtimeId),
   evaluateCompatibility: (runtimeId, artifacts, hw) => ipcRenderer.invoke('runtimes:evaluateCompatibility', runtimeId, artifacts, hw),
 
-  createInstallPlan: (runtimeId, modelId, filename, options) => ipcRenderer.invoke('install:createPlan', runtimeId, modelId, filename, options),
+  createInstallPlan: (runtimeId, modelId, filename, options, modelStoragePath) => ipcRenderer.invoke('install:createPlan', runtimeId, modelId, filename, options, modelStoragePath),
   startInstall: (planId) => ipcRenderer.invoke('install:start', planId),
   cancelInstall: (planId) => ipcRenderer.invoke('install:cancel', planId),
   onInstallProgress: (callback) => {
