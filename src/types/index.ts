@@ -165,6 +165,7 @@ export interface HfModelSearchResult {
   readonly author: string;
   readonly sha?: string;
   readonly lastModified?: string;
+  readonly createdAt?: string;
   readonly private?: boolean;
   readonly gated?: boolean | string;
   readonly disabled?: boolean;

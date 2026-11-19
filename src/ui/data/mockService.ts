@@ -151,6 +151,12 @@ export function applyDiscoveryFilters(
   );
 }
 
+export function compareCreatedAtDescending(a: HfModelSearchResult, b: HfModelSearchResult): number {
+  const timestamp = (model: HfModelSearchResult) =>
+    new Date(model.createdAt || model.lastModified || 0).getTime();
+  return timestamp(b) - timestamp(a);
+}
+
 export function selectHubFilter(filters: DiscoveryFilters): string | undefined {
   if (filters.task !== 'all' && filters.task !== 'coding') return filters.task;
   if (filters.format === 'gguf' || filters.format === 'safetensors') return filters.format;
@@ -453,6 +459,7 @@ export const bridgeService = {
       if (sort === 'lastModified') {
         return new Date(b.lastModified || 0).getTime() - new Date(a.lastModified || 0).getTime();
       }
+      if (sort === 'createdAt') return compareCreatedAtDescending(a, b);
       return (b.likes || 0) * 10 + (b.downloads || 0) * 0.01 - ((a.likes || 0) * 10 + (a.downloads || 0) * 0.01);
     });
 

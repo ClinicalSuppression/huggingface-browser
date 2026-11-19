@@ -93,7 +93,8 @@ const SORT_OPTIONS: Array<{ id: SortOption; label: string }> = [
   { id: 'trendingScore', label: 'Trending' },
   { id: 'downloads', label: 'Downloads' },
   { id: 'likes', label: 'Likes' },
-  { id: 'lastModified', label: 'Recent' },
+  { id: 'createdAt', label: 'Recently created' },
+  { id: 'lastModified', label: 'Recently updated' },
 ];
 
 const selectBaseClass =

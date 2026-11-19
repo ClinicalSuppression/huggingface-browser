@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyDiscoveryFilters, bridgeService, selectHubFilter } from './mockService';
+import { applyDiscoveryFilters, bridgeService, compareCreatedAtDescending, selectHubFilter } from './mockService';
 import { DiscoveryFilters } from '../types';
 import { HfModelSearchResult } from '../../types';
 
@@ -11,6 +11,20 @@ const model = (tags: string[], id = 'owner/model', description = ''): HfModelSea
 });
 const matches = (m: HfModelSearchResult, task: DiscoveryFilters['task']) =>
   applyDiscoveryFilters([m], filters(task)).length > 0;
+
+describe('created date sorting', () => {
+  it('sorts by creation date rather than update date', () => {
+    const recentlyCreated = { ...model([]), createdAt: '2025-02-01', lastModified: '2025-02-02' };
+    const recentlyUpdated = { ...model([], 'owner/old'), createdAt: '2025-01-01', lastModified: '2025-03-01' };
+    expect(compareCreatedAtDescending(recentlyCreated, recentlyUpdated)).toBeLessThan(0);
+  });
+
+  it('falls back to last modified when creation time is missing', () => {
+    const withFallback = { ...model([]), lastModified: '2025-02-01' };
+    const older = { ...model([], 'owner/old'), createdAt: '2025-01-01' };
+    expect(compareCreatedAtDescending(withFallback, older)).toBeLessThan(0);
+  });
+});
 
 describe('task tag filtering', () => {
   it('preserves all and matches any-to-any only from tags', () => {

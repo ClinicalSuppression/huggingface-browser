@@ -1,5 +1,5 @@
-; HF Browser installer (Inno Setup 6)
-; Keep AppVersion in sync with package.json version.
+; Legacy Inno Setup installer (not used by the current electron-builder release flow).
+; Keep version metadata in sync if this installer is intentionally built.
 
 #ifndef PublishDir
   #define PublishDir "dist-release\win-x64"
@@ -8,12 +8,12 @@
 [Setup]
 AppId={{8B1A2C3D-4E5F-6A7B-8C9D-0E1F2A3B4C5D}}
 AppName=HF Browser
-AppVersion=0.1.2
+AppVersion=1.0.0
 AppPublisher=ClinicalSuppression
 DefaultDirName={autopf}\HF Browser
 DefaultGroupName=HF Browser
 OutputDir=dist-installer
-OutputBaseFilename=huggingface-browser-Setup-v0.1.2
+OutputBaseFilename=huggingface-browser-Setup-v1.0.0
 SetupIconFile=assets\icon.ico
 Compression=lzma2/fast
 SolidCompression=yes

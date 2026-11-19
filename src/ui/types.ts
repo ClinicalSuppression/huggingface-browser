@@ -68,7 +68,7 @@ export const DEFAULT_DISCOVERY_FILTERS: DiscoveryFilters = {
   paramSize: 'all',
 };
 
-export type SortOption = 'trendingScore' | 'downloads' | 'likes' | 'lastModified';
+export type SortOption = 'trendingScore' | 'downloads' | 'likes' | 'lastModified' | 'createdAt';
 
 export interface QuantOption {
   readonly id: string;

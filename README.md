@@ -1,17 +1,17 @@
 # HF Browser
 
-A desktop model browser, hardware-aware sizing engine, and local inference deployment orchestrator for Windows 11. Connects directly to the Hugging Face Hub and deploys models into local serving runtimes including Ollama, llama.cpp, xollama, and vLLM.
+A desktop model browser, hardware-aware sizing assistant, and local inference deployment orchestrator for Windows 11 x64. Connects directly to the Hugging Face Hub and deploys models into local serving runtimes including Ollama, llama.cpp, xollama, and vLLM.
 
 ## Overview
 
-Local large language model discovery is frequently complicated by fragmented quantization formats (GGUF, SafeTensors, FP8, AWQ), diverging runtime configurations, and complex VRAM arithmetic. HF Browser provides a unified desktop interface for discovering models, inspecting quantization artifacts, computing exact hardware fit against live GPU telemetry, and deploying with one click.
+Local large language model discovery is frequently complicated by fragmented quantization formats (GGUF, SafeTensors, FP8, AWQ), diverging runtime configurations, and complex VRAM arithmetic. HF Browser provides a unified desktop interface for discovering models, inspecting quantization artifacts, estimating usable context from available GPU memory, and deploying with one click. Context recommendations are estimates based on model metadata, estimated Q4 weights, an FP16 KV cache, and reserved VRAM headroom; actual model and runtime limits may differ.
 
 ## Key Features
 
 - **Live Hugging Face Integration:** Embedded interactive model page browser powered by an out-of-process Chromium guest webview alongside a native master-detail split layout.
 - **Universal Runtime Adapter System (URAS):** Unified discovery, configuration, and deployment across Ollama, llama.cpp (`llama-server`), xollama (`mann1x/xollama`), and vLLM.
-- **Dynamic VRAM Sizing Engine:** Real-time dedicated VRAM usage monitoring via Windows performance counters. Accurately factors model weights, multi-token prediction (MTP) tensors, multimodal vision projectors (`mmproj`), KV cache quantization, and configurable safe VRAM headroom (512 MB default) into hardware fit badges (`Full GPU Fit`, `Partial Offload`, `CPU Only`).
-- **Comprehensive Search & Discovery:** Multi-dimensional filtering mirroring Hugging Face's taxonomy:
+- **VRAM-Aware Context Recommendations:** Uses available GPU memory, estimated model weights, estimated FP16 KV-cache needs, and configurable VRAM headroom (512 MB default) to recommend a per-model context length. Recommendations are estimates, not runtime guarantees; cards flag cases where estimated model weights or minimum context exceed available VRAM.
+- **Comprehensive Search & Discovery:** Multi-dimensional filtering and sorting mirroring Hugging Face's taxonomy, including trending, downloads, likes, recently updated, and recently created:
   - Tasks: Any-to-Any, Text Generation, Multimodal Vision, Conversational, Code Generation, Embeddings.
   - Formats: GGUF, SafeTensors, FP8 / Compressed.
   - Alignment: Full Uncensored search spanning all activation removal (ARA), abliterated, heretic, unaligned, dolphin, and no-refusal aliases.
@@ -23,7 +23,7 @@ Local large language model discovery is frequently complicated by fragmented qua
 
 ## Prerequisites
 
-- Windows 11 (x64 or ARM64)
+- Windows 11 (x64; ARM64 packages are not currently provided)
 - Node.js >= 20.0.0 (Node 26 LTS recommended)
 - Local serving runtime (Ollama, llama.cpp, xollama, or vLLM) running locally or accessible via network
 
@@ -88,7 +88,8 @@ Executes the Vitest unit, integration, and performance benchmark suites.
 
 Major releases provide:
 - Source Archive: `huggingface-browser-vX.Y.Z-src.zip`
-- Application Package: Portable and/or setup executable when available
+- Application Packages: Windows x64 portable executable and NSIS setup executable
+- Release notes and SHA-256 checksums for published assets
 
 ## License
 

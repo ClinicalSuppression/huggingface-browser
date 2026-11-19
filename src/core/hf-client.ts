@@ -41,7 +41,7 @@ export interface SearchOptions {
   readonly search?: string;
   readonly author?: string;
   readonly filter?: string;
-  readonly sort?: 'downloads' | 'trendingScore' | 'lastModified' | 'likes';
+  readonly sort?: 'downloads' | 'trendingScore' | 'lastModified' | 'createdAt' | 'likes';
   readonly direction?: -1 | 1;
   readonly limit?: number;
   readonly token?: string;

@@ -8,6 +8,7 @@ import {
   formatCompactNumber,
   formatContextLength,
   formatPipelineTag,
+  estimateMaxContextTokens,
 } from '../utils/format';
 
 interface FeatureBadge {
@@ -166,7 +167,24 @@ export const ModelCard: React.FC<ModelCardProps> = ({
   );
 
   const recommendedContext = bestFit && bestFit.tokens > 0 ? bestFit.tokens : null;
-  const contextEstimateText = `VRAM-based estimate: ${recommendedContext?.toLocaleString()} tokens, using estimated Q4 weights, FP16 KV cache, and reserved VRAM headroom. Actual model or runtime limits may differ.`;
+  const nativeMaxContext = estimateMaxContextTokens(model);
+  const hardwareUnavailable = !hardware || hardware.gpus.length === 0;
+  const contextEstimateText = hardwareUnavailable
+    ? `Hardware unavailable. Showing an estimated model context ceiling of ${nativeMaxContext.toLocaleString()} tokens; this is not a VRAM fit estimate or a verified native limit. Actual model or runtime limits may differ.`
+    : `Maximum usable context estimate: ${recommendedContext?.toLocaleString() ?? 'below 2,048'} tokens. VRAM-based estimate using estimated Q4 weights, FP16 KV cache, and reserved VRAM headroom. Actual model or runtime limits may differ.`;
+  const hasOverflow = bestFit?.status === 'cpu' || bestFit?.status === 'minimal' ||
+    (bestFit?.status === 'gpu' && bestFit.hasKnownMaxContext && bestFit.tokens < nativeMaxContext);
+  const contextValue = recommendedContext !== null
+    ? formatContextLength(recommendedContext)
+    : bestFit
+      ? 'Below 2K'
+      : `~${formatContextLength(nativeMaxContext)}`;
+  const contextDescription = recommendedContext !== null
+    ? `Estimated maximum usable context: ${formatContextLength(recommendedContext)}.`
+    : bestFit
+      ? 'No usable GPU context estimated with the selected VRAM.'
+      : `Hardware unavailable; showing estimated model context ceiling of ${formatContextLength(nativeMaxContext)}, not a VRAM fit estimate or verified native limit.`;
+  const contextState = `${contextDescription}${hasOverflow ? ' VRAM overflow.' : ''}`;
 
   return (
     <button
@@ -175,7 +193,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
       className={`fluent-card fluent-card-interactive group flex h-full flex-col justify-between rounded-xl p-3 text-left ${
         reasoningInfo.isThinkingModel ? 'hover:border-purple-400/40' : ''
       }`}
-      aria-label={`Inspect ${model.id}, ${pipelineLabel}${isGated ? ', Gated model' : ''}`}
+      aria-label={`Inspect ${model.id}, ${pipelineLabel}${isGated ? ', Gated model' : ''}. Maximum context: ${contextValue}. ${contextState}`}
     >
       <div>
         {/* Top Row: Author + Gated Tag */}
@@ -223,15 +241,25 @@ export const ModelCard: React.FC<ModelCardProps> = ({
 
       {/* Compact Footer: Recommended Context, Feature Badges & Stats */}
       <div className="mt-2.5 space-y-1.5 border-t border-white/[0.06] pt-2">
-        {recommendedContext !== null && (
+        <div className="flex flex-wrap items-center gap-1">
           <span
             className="inline-flex max-w-full truncate rounded border border-sky-400/20 bg-sky-400/[0.07] px-1.5 py-0.5 text-[10px] font-medium text-sky-200"
             title={contextEstimateText}
-            aria-label={`Estimated maximum context: ${formatContextLength(recommendedContext)}. VRAM-based estimate using estimated Q4 weights, FP16 KV cache, and reserved VRAM headroom. Actual model or runtime limits may differ.`}
+            aria-label={`${contextDescription} ${contextEstimateText}`}
           >
-            Max context · {formatContextLength(recommendedContext)}
+            Max context · {contextValue}
           </span>
-        )}
+          {hasOverflow && (
+            <span
+              className="inline-flex rounded border border-rose-400/30 bg-rose-500/10 px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-rose-300"
+              title="This model cannot fit in the available VRAM at the estimated maximum context."
+              aria-label="VRAM overflow: model cannot fit available VRAM at the estimated maximum context"
+            >
+              VRAM overflow
+            </span>
+          )}
+        </div>
+        {hardwareUnavailable && <span className="sr-only">Hardware unavailable; context is the model ceiling, not a VRAM fit estimate.</span>}
 
         {featureBadges.length > 0 && (
           <div className="flex flex-wrap items-center gap-1">
