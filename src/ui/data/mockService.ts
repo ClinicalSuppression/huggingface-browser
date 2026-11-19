@@ -150,6 +150,12 @@ export function applyDiscoveryFilters(
   );
 }
 
+export function selectHubFilter(filters: DiscoveryFilters): string | undefined {
+  if (filters.task !== 'all' && filters.task !== 'coding') return filters.task;
+  if (filters.format === 'gguf' || filters.format === 'safetensors') return filters.format;
+  return undefined;
+}
+
 export const MOCK_HARDWARE_PROFILE: HardwareProfile = {
   gpus: [
     {
@@ -405,10 +411,7 @@ export const bridgeService = {
     sort: SortOption
   ): Promise<HfModelSearchResult[]> {
     if (window.electronAPI) {
-      let apiFilter: string | undefined;
-      if (filters.format === 'gguf' || filters.format === 'safetensors') {
-        apiFilter = filters.format;
-      }
+      const apiFilter = selectHubFilter(filters);
 
       const searchTerms: string[] = [];
       if (query.trim()) searchTerms.push(query.trim());

@@ -856,7 +856,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
                     try { webviewRef.current.reload(); } catch {}
                   }
                 }}
-                className="inline-flex items-center gap-1 rounded border border-white/[0.12] bg-white/[0.05] px-2 py-0.5 text-[11px] text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white"
+                className="inline-flex items-center gap-1 rounded border border-white/[0.12] bg-white/[0.05] px-2 py-0.5 text-xs text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white"
               >
                 <RotateCw className="h-3 w-3" />
                 Reload
@@ -864,7 +864,7 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
               <button
                 type="button"
                 onClick={handleOpenInBrowser}
-                className="inline-flex items-center gap-1 rounded border border-white/[0.12] bg-white/[0.05] px-2 py-0.5 text-[11px] text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white"
+                className="inline-flex items-center gap-1 rounded border border-white/[0.12] bg-white/[0.05] px-2 py-0.5 text-xs text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white"
               >
                 <ExternalLink className="h-3 w-3" />
                 Open in Browser
@@ -891,14 +891,14 @@ export const ModelDetailDrawer: React.FC<ModelDetailDrawerProps> = ({
                       try { webviewRef.current.reload(); } catch {}
                     }
                   }}
-                  className="rounded border border-amber-300/40 bg-amber-400/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-100 hover:bg-amber-400/20"
+                  className="rounded border border-amber-300/40 bg-amber-400/10 px-2.5 py-0.5 text-xs font-medium text-amber-100 hover:bg-amber-400/20"
                 >
                   Reload
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab('readme')}
-                  className="rounded bg-amber-700 px-2.5 py-0.5 text-[11px] font-medium text-white hover:bg-amber-600"
+                  className="rounded bg-amber-700 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-amber-600"
                 >
                   Switch to README
                 </button>

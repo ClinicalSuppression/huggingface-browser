@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDiscoveryFilters } from './mockService';
+import { applyDiscoveryFilters, selectHubFilter } from './mockService';
 import { DiscoveryFilters } from '../types';
 import { HfModelSearchResult } from '../../types';
 
@@ -24,11 +24,32 @@ describe('task tag filtering', () => {
   });
   it('uses normalized exact tags for regular tasks', () => {
     expect(matches(model([' image-text-to-text ']), 'image-text-to-text')).toBe(true);
+    expect(matches(model(['image_text_to_text']), 'image-text-to-text')).toBe(true);
     expect(matches(model(['image-text-to-text-extra']), 'image-text-to-text')).toBe(false);
   });
   it('recognizes coding-related tags only', () => {
     expect(matches(model(['code-generation']), 'coding')).toBe(true);
     expect(matches(model(['coding']), 'coding')).toBe(true);
     expect(matches(model([], 'owner/coder'), 'coding')).toBe(false);
+  });
+});
+
+describe('Hub API filter selection', () => {
+  const withFilters = (task: DiscoveryFilters['task'], format: DiscoveryFilters['format'] = 'all') => ({
+    ...filters(task), format,
+  });
+
+  it('uses exact task tags, including any-to-any and conversational', () => {
+    expect(selectHubFilter(withFilters('any-to-any'))).toBe('any-to-any');
+    expect(selectHubFilter(withFilters('conversational'))).toBe('conversational');
+  });
+
+  it('falls back to format for coding and any task', () => {
+    expect(selectHubFilter(withFilters('coding', 'gguf'))).toBe('gguf');
+    expect(selectHubFilter(withFilters('all', 'safetensors'))).toBe('safetensors');
+  });
+
+  it('leaves coding without a format filter', () => {
+    expect(selectHubFilter(withFilters('coding'))).toBeUndefined();
   });
 });
